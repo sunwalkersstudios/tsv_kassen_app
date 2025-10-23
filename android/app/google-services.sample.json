@@ -1,0 +1,8 @@
+{
+  "_comment": "This is a sample placeholder. Do NOT commit your real google-services.json.",
+  "instructions": [
+    "1) In Firebase Console → Project Settings → General → Your apps (Android), download google-services.json",
+    "2) Place it at android/app/google-services.json (local only, ignored by git)",
+    "3) Keep the file private; rotate and restrict API keys in Google Cloud Console if leaked"
+  ]
+}

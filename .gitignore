@@ -33,6 +33,7 @@ coverage/
 # Secrets (DO NOT COMMIT)
 android/app/key.properties
 android/keystore.jks
+android/app/google-services.json
 # Miscellaneous
 *.class
 *.log

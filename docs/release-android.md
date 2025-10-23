@@ -17,9 +17,16 @@ storeFile=..\\keystore.jks
 - In `android/app/build.gradle.kts` eine `release`-SigningConfig referenzieren (TODO: Projekt-spezifisch ergänzen)
 
 ## 3) Firebase
-- `google-services.json` (Android) aktuell in `android/app` hinterlegen
+- `google-services.json` (Android) lokal in `android/app` hinterlegen (nicht committen)
+- Beispiel liegt als `android/app/google-services.sample.json`
 - Crashlytics/Performance sind in der App initialisiert
   - Optional (empfohlen): Crashlytics Gradle Plugin hinzufügen, damit Mapping-Dateien hochgeladen werden
+### Schlüssel-Sicherheit
+- Falls ein API‑Key geleakt wurde:
+  - Google Cloud Console → APIs & Services → Credentials → Key auswählen → „Regenerate key“
+  - Application restrictions setzen (Android App: Paketname `de.tsv.kassenapp` + SHA‑1 Upload/Play‑Signing)
+  - API restrictions nur setzen, wenn klar ist, welche APIs genutzt werden (für Firebase meist App‑Restriktionen ausreichend)
+  - Prüfe Cloud Logging auf ungewöhnliche Nutzung
     - In `android/settings.gradle.kts`:
       ```kotlin
       plugins {

@@ -45,6 +45,16 @@ Nach Login wird abhängig von der Rolle auf die jeweilige Route geleitet.
 2) App starten (Android empfohlen)
 3) Optional: Analyzer laufen lassen (VS Code Task „Flutter analyze“)
 
+### Firebase-Konfiguration (wichtig)
+
+- Lege deine Firebase-Konfigurationsdatei lokal ab und commite sie nicht:
+	- Android: `android/app/google-services.json` (git-ignored)
+	- Vorlage/Beispiel: `android/app/google-services.sample.json`
+- Falls ein API‑Schlüssel geleakt wurde:
+	- In Google Cloud Console → APIs & Services → Credentials → betroffenen API Key auswählen → „Regenerate key“ (rotieren)
+	- „Application restrictions“ setzen (Android-App: Paket `de.tsv.kassenapp` + SHA‑1 Fingerprints Upload/Play‑Signing)
+	- Optional: „API restrictions“ nur, wenn sicher bekannt; für Firebase-Schlüssel sind meist App‑Restriktionen ausreichend.
+
 ### Monitoring & Backups
 
 - Crashlytics und Performance sind initialisiert; Fehler und Traces werden (auf Android/iOS) gesammelt.
@@ -90,4 +100,6 @@ firebase emulators:start --only firestore
 
 ## Datenschutz
 
-- Datenschutzerklärung der App: siehe `docs/privacy-policy.md` (für Play Console unter einer öffentlich erreichbaren URL bereitstellen, z. B. GitHub Pages)
+- Datenschutzerklärung (öffentlich): https://sunwalkersstudios.de/tsv_kassen_app/
+- Direkter Link zur Policy: https://sunwalkersstudios.de/tsv_kassen_app/privacy-policy.html
+- Quelle im Repo: `docs/privacy-policy.md`
