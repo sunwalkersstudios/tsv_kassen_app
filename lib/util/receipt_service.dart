@@ -220,7 +220,7 @@ class ReceiptService {
       for (final line in footer.split('\n')) {
         if (line.contains('SUMME:') && line.contains('{space}')) {
           // legacy support; already handled in template replacement above
-          final total = ((s['total'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(2) + ' EUR';
+          final total = '${((s['total'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(2)} EUR';
           _addLeftRightStr(sb, 'SUMME:', total, cols);
         } else {
           sb.writeln(line);

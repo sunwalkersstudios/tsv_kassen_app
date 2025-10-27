@@ -373,7 +373,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                         }
                                         return t;
                                       }
-                                      if (!mounted) return;
+                                      if (!context.mounted) return;
                                       final confirmed = await showDialog<bool>(
                                         context: context,
                                         builder: (ctx) {
@@ -438,8 +438,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                         return;
                                       }
                                     }
-
-                                    if (!mounted) return;
+                                    if (!context.mounted) return;
                                     final choice = await showModalBottomSheet<String>(
                                       context: context,
                                       builder: (ctx) => SafeArea(

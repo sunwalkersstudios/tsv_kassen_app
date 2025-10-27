@@ -62,6 +62,7 @@ class AdminEventsScreen extends StatelessWidget {
         ],
       ),
     );
+    if (!context.mounted) return;
     if (ok == true && ctrl.text.trim().isNotEmpty) {
       await context.read<EventsProvider>().addEvent(name: ctrl.text.trim());
     }
@@ -80,6 +81,7 @@ class AdminEventsScreen extends StatelessWidget {
         ],
       ),
     );
+    if (!context.mounted) return;
     if (ok == true && ctrl.text.trim().isNotEmpty) {
       await onSave(ctrl.text.trim());
     }

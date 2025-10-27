@@ -63,6 +63,8 @@ Nach Login wird abhängig von der Rolle auf die jeweilige Route geleitet.
 
 Weitere Details in `docs/e2e-checklist.md` und `docs/release-android.md`.
 
+Siehe auch: `docs/security-keys.md` für sichere Schlüssel-/Secret-Verwaltung, API-Key-Restriktion und Play App Signing.
+
 ### Drucker einrichten
 
 - Admin → Drucker: Bondrucker (ESC/POS) und Kassendrucker (Plain/ESC-POS) konfigurieren

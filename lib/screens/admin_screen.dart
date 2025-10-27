@@ -83,10 +83,11 @@ class AdminScreen extends StatelessWidget {
                   ),
                 ),
               );
-              if (ok == true && context.mounted) {
+              if (ok == true) {
                 final ip = ipCtrl.text.trim();
                 final port = int.tryParse(portCtrl.text.trim()) ?? 9100;
                 await svc.savePrinter(ip: ip, port: port, type: 'bon', cols: cols, mode: mode);
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bondrucker gespeichert')));
               }
             },
@@ -180,10 +181,11 @@ class AdminScreen extends StatelessWidget {
                   ),
                 ),
               );
-              if (ok == true && context.mounted) {
+              if (ok == true) {
                 final ip = ipCtrl.text.trim();
                 final port = int.tryParse(portCtrl.text.trim()) ?? 9100;
                 await svc.savePrinter(ip: ip, port: port, type: 'cashier', cols: cols, mode: mode);
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kassendrucker gespeichert')));
               }
             },

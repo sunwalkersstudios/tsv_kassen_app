@@ -150,16 +150,17 @@ class TsvApp extends StatelessWidget {
                     if (context.read<AuthProvider>().isAuthenticated && !context.read<AuthProvider>().isLocked)
                       Positioned(
                         right: 16,
-                        bottom: 16,
-                        child: FloatingActionButton.extended(
+                        // Place below status bar + typical AppBar height to avoid overlap
+                        top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
+                        child: FloatingActionButton.small(
                           heroTag: 'switchUserFab',
-                          icon: const Icon(Icons.switch_account),
-                          label: const Text('Nutzer wechseln'),
+                          tooltip: 'Nutzer wechseln',
                           onPressed: () {
                             // Force logout and go to login screen
                             context.read<AuthProvider>().logout();
                             GoRouter.of(context).go('/login');
                           },
+                          child: const Icon(Icons.switch_account),
                         ),
                       ),
                   ],

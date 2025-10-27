@@ -27,7 +27,7 @@ class TablePlanScreen extends StatelessWidget {
                       child: Text(
                         'Keine Tische gefunden. Bitte im Admin-Bereich anlegen (Admin → Tische).',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
                       ),
                     ),
                   );
@@ -40,7 +40,7 @@ class TablePlanScreen extends StatelessWidget {
                       child: Text(
                         'Keine aktiven Tische. Bitte im Admin-Bereich aktivieren (Admin → Tische).',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
                       ),
                     ),
                   );
@@ -72,9 +72,9 @@ class TablePlanScreen extends StatelessWidget {
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                Theme.of(context).colorScheme.primary.withOpacity(0.12),
-                                Theme.of(context).colorScheme.primaryContainer.withOpacity(0.25),
-                              ],
+                                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                                  Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.25),
+                                ],
                             ),
                           ),
                           child: Stack(
@@ -84,7 +84,7 @@ class TablePlanScreen extends StatelessWidget {
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.table_bar, size: 48, color: Theme.of(context).colorScheme.primary.withOpacity(0.8)),
+                                    Icon(Icons.table_bar, size: 48, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8)),
                                     const SizedBox(height: 10),
                                     Text(
                                       t.name,
@@ -92,7 +92,7 @@ class TablePlanScreen extends StatelessWidget {
                                       style: TextStyle(
                                         fontSize: 20,
                                         fontWeight: FontWeight.w600,
-                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.9),
+                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.9),
                                       ),
                                     ),
                                   ],

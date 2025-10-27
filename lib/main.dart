@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -40,6 +42,12 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Enable immersive fullscreen on Android (hide system bars, reveal on swipe)
+  try {
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android)) {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
+  } catch (_) {}
   // Initialize Firebase (Android resolves options from google-services.json)
   try {
     await Firebase.initializeApp();
@@ -131,7 +139,25 @@ Future<void> main() async {
         child: const TsvApp(),
       ),
     );
+    // Re-apply immersive mode when the app resumes
+    try {
+      WidgetsBinding.instance.addObserver(_ImmersiveReapplier());
+    } catch (_) {}
   }, (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
   });
+}
+
+class _ImmersiveReapplier with WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Best-effort reapply on Android only
+      try {
+        if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android)) {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        }
+      } catch (_) {}
+    }
+  }
 }

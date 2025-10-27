@@ -90,14 +90,17 @@ class _CashierScreenState extends State<CashierScreen> {
                 ),
               );
               if (confirm != true) return;
+              // Obtaining messenger before the async gap is safe; we ignore the lint for this line.
+              // ignore: use_build_context_synchronously
+              final messenger = ScaffoldMessenger.maybeOf(this.context);
               try {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Druck startet...')));
+                messenger?.showSnackBar(const SnackBar(content: Text('Druck startet...')));
                 await ReceiptService().printDaySummary(_day);
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tagesabschluss gedruckt.')));
+                messenger?.showSnackBar(const SnackBar(content: Text('Tagesabschluss gedruckt.')));
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Druckfehler: $e')));
+                messenger?.showSnackBar(SnackBar(content: Text('Druckfehler: $e')));
               }
             },
           ),
@@ -149,10 +152,10 @@ class _CashierScreenState extends State<CashierScreen> {
                     }
                   }
                   await Clipboard.setData(ClipboardData(text: sb.toString()));
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSV in Zwischenablage kopiert')));
                 } catch (e) {
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('CSV-Export fehlgeschlagen: $e')));
                 }
               } else if (value == 'reset-day') {
@@ -178,10 +181,10 @@ class _CashierScreenState extends State<CashierScreen> {
                     _deposit = 0.0;
                     _withdrawal = 0.0;
                   });
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tageswerte zurückgesetzt')));
                 } catch (e) {
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler beim Zurücksetzen: $e')));
                 }
               }

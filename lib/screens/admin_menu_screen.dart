@@ -36,10 +36,10 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
               try {
                 await repo.addItem(name: 'Cola', price: 2.8, category: 'Getränke', route: 'bar', eventId: null);
                 await repo.addItem(name: 'Schnitzel', price: 12.5, category: 'Speisen', route: 'kitchen', eventId: null);
-                if (!mounted) return;
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demo-Artikel hinzugefügt')));
               } catch (e) {
-                if (!mounted) return;
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
               }
             },
@@ -145,18 +145,19 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
         ),
       ),
     );
+    if (!context.mounted) return;
     if (ok == true) {
       final nm = name.text.trim();
       final prStr = price.text.replaceAll(RegExp(r'[^0-9,\\.-]'), '').replaceAll(',', '.').trim();
       final pr = double.tryParse(prStr);
       if (nm.isEmpty || pr == null || pr <= 0) {
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bitte Namen und gültigen Preis (> 0) angeben')));
         }
         return;
       }
       if (eventSpecific && (selectedEventId == null || selectedEventId!.isEmpty)) {
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bitte ein Event auswählen oder Event-spezifisch deaktivieren')));
         }
         return;
@@ -170,11 +171,11 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
           route: route,
           eventId: eventSpecific ? selectedEventId : null,
         );
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artikel gespeichert')));
         }
       } catch (e) {
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
         }
       }

@@ -90,7 +90,7 @@ class KitchenScreen extends StatelessWidget {
                             dense: true,
                             contentPadding: EdgeInsets.zero,
                             title: Text('$nameToShow x$qty'),
-                            subtitle: Text('Status: $status' + ((p['notes'] as String?)?.isNotEmpty == true ? ' • Hinweis: ${p['notes']}' : '')),
+                            subtitle: Text('Status: $status${(p['notes'] as String?)?.isNotEmpty == true ? ' • Hinweis: ${p['notes']}' : ''}'),
                           );
                         }),
                         Align(

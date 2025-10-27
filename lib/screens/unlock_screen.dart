@@ -54,7 +54,7 @@ class _UnlockScreenState extends State<UnlockScreen> {
       }
       final did = await auth.authenticate(
         localizedReason: 'Per Fingerabdruck entsperren',
-        options: const AuthenticationOptions(biometricOnly: true, stickyAuth: true),
+        biometricOnly: true,
       );
       if (did && mounted) {
         context.read<AuthProvider>().unlock();
