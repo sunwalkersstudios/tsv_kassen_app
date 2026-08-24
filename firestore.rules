@@ -88,6 +88,21 @@ service cloud.firestore {
       }
     }
 
+    // Kassentage: Kassenstart, Einlagen, Entnahmen. Nur Admin, weil die
+    // Kasse insgesamt admin-only ist. Die Dokument-ID ist der Tag (yyyy-MM-dd).
+    match /cashDays/{day} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.openingCents is int
+        && request.resource.data.depositCents is int
+        && request.resource.data.withdrawalCents is int
+        && request.resource.data.openingCents >= 0
+        && request.resource.data.depositCents >= 0
+        && request.resource.data.withdrawalCents >= 0
+        && request.resource.data.day == day;
+      allow delete: if false;
+    }
+
     // Sales: readable by signed-in users (for receipts/cashier); writes by server/admin with basic validation
     match /sales/{saleId} {
       allow read: if isSignedIn();

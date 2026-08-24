@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -43,6 +44,9 @@ Future<void> main() async {
   // Wrap everything in runZonedGuarded from the start
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    // Deutsche Datumssymbole laden - ohne das wirft jedes DateFormat
+    // mit Locale 'de_DE' beim ersten Aufruf.
+    await initializeDateFormatting('de_DE', null);
     // Enable immersive fullscreen on Android (hide system bars, reveal on swipe)
     try {
       if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android)) {

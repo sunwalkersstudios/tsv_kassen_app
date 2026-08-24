@@ -1,5 +1,38 @@
 # Changelog
 
+## Unveroeffentlicht
+
+### Kasse: Kassenschnitte dauerhaft verfuegbar
+
+- **Zeitraum frei waehlbar.** Die bisherige Liste der letzten sieben Tage ist
+  ersetzt durch Tag / Woche / Monat / Jahr, Blaetterpfeile und einen Kalender,
+  der bis zum ersten Verkaufstag zurueckreicht.
+- **Kassenstart, Einlagen und Entnahmen liegen in Firestore** unter
+  `cashDays/{yyyy-MM-dd}` statt in SharedPreferences. Damit sind sie auf jedem
+  Geraet sichtbar und ueberstehen eine Neuinstallation. Zusaetzlich ein
+  Notizfeld je Tag.
+- **Export als Datei statt Zwischenablage.** PDF mit Deckkopf, Kennzahlen,
+  Kassenbestand, Tages- und Artikelauswertung sowie CSV fuer deutsches Excel -
+  beides ueber den Teilen-Dialog des Geraets.
+- Mehrtagesansichten zeigen zusaetzlich eine Aufschluesselung nach Tagen;
+  ein Tippen darauf springt in den Einzeltag.
+
+### Geld
+
+- Neue Betraege werden als ganzzahlige Cent gefuehrt (`Money`, `CashDay`),
+  nicht als Fliesskommazahl. Die Verkaufsdokumente bleiben vorerst `double`;
+  umgerechnet wird beim Einlesen.
+- `Money.parse` deutet einen Punkt mit genau drei Ziffern dahinter als
+  Tausendertrenner ("1.000" -> 1000,00), sonst als Dezimaltrenner.
+
+### Sonstiges
+
+- Deutsche Lokalisierung: `flutter_localizations`, Datumssymbole werden beim
+  Start geladen. Der Kalender erscheint dadurch auf Deutsch.
+- Firestore-Regeln fuer `cashDays`: nur Admin, Betraege muessen ganzzahlig und
+  nicht negativ sein, Loeschen ist ausgeschlossen.
+- 24 Unit-Tests fuer Zeitraumlogik, Betragsrechnung und Auswertung.
+
 ## 1.0.2+4 — 2025-10-27
 
 - Build stabilisiert und Lint-Probleme behoben

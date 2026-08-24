@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -145,6 +146,15 @@ class TsvApp extends StatelessWidget {
 
     return MaterialApp.router(
       title: 'TSV KassenApp',
+      // Deutsch als einzige Sprache: Datumswaehler, Wochentage und
+      // Standardtexte von Material erscheinen sonst auf Englisch.
+      locale: const Locale('de', 'DE'),
+      supportedLocales: const [Locale('de', 'DE')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,

@@ -71,11 +71,20 @@ Siehe auch: `docs/security-keys.md` für sichere Schlüssel-/Secret-Verwaltung, 
 - Testdruck ausführen, bei Bedarf Breite (32/48) und Modus anpassen
 - Vorlagen-Editor für Plain-Text (A4) unter Admin → Druck-Vorlagen
 
-### Tagesabschluss drucken
+### Kasse und Kassenschnitte
 
-- Admin → Kasse: Tag wählen (yyyy-MM-dd), Kassenstart setzen (persistiert pro Tag)
-- Drucksymbol in der AppBar → Bestätigen → Tagesabschluss wird auf Kassendrucker ausgegeben
- - Einlagen/Entnahmen werden berücksichtigt und gedruckt
+- Admin -> Kasse. Oben Tag / Woche / Monat / Jahr waehlen, mit den Pfeilen
+  blaettern oder ueber den Kalender direkt zu einem Datum springen. Der
+  Kalender reicht bis zum ersten Verkaufstag zurueck.
+- **Kassenwerte** (Kassenstart, Einlagen, Entnahmen, Notiz) werden im
+  Einzeltag ueber "Bearbeiten" gepflegt und liegen in Firestore unter
+  `cashDays/{yyyy-MM-dd}` - also auf jedem Geraet gleich.
+- **Tagesabschluss drucken** gibt den gewaehlten Tag auf dem Kassendrucker aus.
+- **PDF teilen** und **CSV teilen** erzeugen eine Datei und oeffnen den
+  Teilen-Dialog. Die CSV ist auf deutsches Excel ausgelegt (Semikolon,
+  Dezimalkomma, UTF-8 mit BOM).
+- In Wochen-, Monats- und Jahresansicht zeigt die Kasse zusaetzlich eine
+  Tagesliste; ein Tippen auf eine Zeile springt in diesen Tag.
 
 ### Firestore Security Rules
 
@@ -92,11 +101,6 @@ Oder lokal mit Emulator testen:
 firebase emulators:start --only firestore
 ```
 
-### CSV-Export
-
-- In der Kasse (⋮) → “Export CSV (Zwischenablage)”
-- Enthält zuerst einen SUMMARY-Block (Tag, Kassenstart, Einlagen, Entnahmen, Bar/Karte/Gesamt, Kasseninhalt)
-- Danach detailierte Zeilen mit Belegen/Positionen
 
 ## Nächste Schritte (Backlog)
 
