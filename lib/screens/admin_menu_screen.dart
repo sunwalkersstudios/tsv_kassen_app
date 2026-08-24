@@ -30,6 +30,22 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
             },
           ),
           IconButton(
+            tooltip: 'Basis-Artikel reparieren',
+            icon: const Icon(Icons.build_circle_outlined),
+            onPressed: () async {
+              try {
+                final n = await repo.normalizeBaseEventIds();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(n > 0 ? 'Repariert: $n Artikel' : 'Keine Reparatur nötig')),
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
+              }
+            },
+          ),
+          IconButton(
             tooltip: 'Demo füllen (Basis-Artikel)',
             icon: const Icon(Icons.download_for_offline),
             onPressed: () async {
@@ -103,11 +119,12 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
                   decoration: const InputDecoration(labelText: 'Preis (z.B. 5,40 oder 5.40)'),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 ),
-                DropdownButtonFormField(
+                DropdownButtonFormField<String>(
                   initialValue: category,
                   items: const [
                     DropdownMenuItem(value: 'Speisen', child: Text('Speisen (Küche)')),
                     DropdownMenuItem(value: 'Getränke', child: Text('Getränke (Bar)')),
+                    DropdownMenuItem(value: 'Grillhütte', child: Text('Grillhütte (Küche)')),
                   ],
                   onChanged: (v) => setState(() => category = v ?? 'Speisen'),
                   decoration: const InputDecoration(labelText: 'Kategorie'),
@@ -151,15 +168,13 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
       final prStr = price.text.replaceAll(RegExp(r'[^0-9,\\.-]'), '').replaceAll(',', '.').trim();
       final pr = double.tryParse(prStr);
       if (nm.isEmpty || pr == null || pr <= 0) {
-        if (context.mounted) {
+        if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bitte Namen und gültigen Preis (> 0) angeben')));
-        }
         return;
       }
       if (eventSpecific && (selectedEventId == null || selectedEventId!.isEmpty)) {
-        if (context.mounted) {
+        if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bitte ein Event auswählen oder Event-spezifisch deaktivieren')));
-        }
         return;
       }
       final route = category == 'Getränke' ? 'bar' : 'kitchen';
@@ -171,13 +186,11 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
           route: route,
           eventId: eventSpecific ? selectedEventId : null,
         );
-        if (context.mounted) {
+        if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artikel gespeichert')));
-        }
       } catch (e) {
-        if (context.mounted) {
+        if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
-        }
       }
     }
   }
@@ -203,20 +216,105 @@ class _MenuList extends StatelessWidget {
             return ListTile(
               title: Text(m.name),
               subtitle: Text('${m.category} • ${m.route} • ${m.price.toStringAsFixed(2)} €'),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete),
-                onPressed: () async {
-                  try {
-                    await MenuRepo().deleteItem(m.id);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artikel gelöscht')));
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
-                    }
-                  }
-                },
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit),
+                    tooltip: 'Bearbeiten',
+                    onPressed: () async {
+                      final nameCtrl = TextEditingController(text: m.name);
+                      final priceCtrl = TextEditingController(text: m.price.toStringAsFixed(2));
+                      String category = m.category;
+                      String route = m.route;
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => StatefulBuilder(
+                          builder: (ctx, setStateDlg) => AlertDialog(
+                            title: const Text('Artikel bearbeiten'),
+                            content: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextField(
+                                    controller: nameCtrl,
+                                    decoration: const InputDecoration(labelText: 'Name'),
+                                  ),
+                                  TextField(
+                                    controller: priceCtrl,
+                                    decoration: const InputDecoration(labelText: 'Preis'),
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  ),
+                                  DropdownButtonFormField<String>(
+                                    initialValue: category,
+                                    items: const [
+                                      DropdownMenuItem(value: 'Speisen', child: Text('Speisen')),
+                                      DropdownMenuItem(value: 'Getränke', child: Text('Getränke')),
+                                      DropdownMenuItem(value: 'Grillhütte', child: Text('Grillhütte')),
+                                    ],
+                                    onChanged: (v) => setStateDlg(() => category = v ?? category),
+                                    decoration: const InputDecoration(labelText: 'Kategorie'),
+                                  ),
+                                  DropdownButtonFormField<String>(
+                                    initialValue: route,
+                                    items: const [
+                                      DropdownMenuItem(value: 'kitchen', child: Text('Route: Küche')),
+                                      DropdownMenuItem(value: 'bar', child: Text('Route: Bar')),
+                                    ],
+                                    onChanged: (v) => setStateDlg(() => route = v ?? route),
+                                    decoration: const InputDecoration(labelText: 'Route'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+                              ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Speichern')),
+                            ],
+                          ),
+                        ),
+                      );
+                      if (ok == true) {
+                        final nm = nameCtrl.text.trim();
+                        final prStr = priceCtrl.text.replaceAll(RegExp(r'[^0-9,\.-]'), '').replaceAll(',', '.').trim();
+                        final pr = double.tryParse(prStr);
+                        if (nm.isEmpty || pr == null || pr <= 0) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bitte gültige Werte eingeben')));
+                          return;
+                        }
+                        try {
+                          await MenuRepo().updateItem(MenuItemEntity(
+                            id: m.id,
+                            name: nm,
+                            price: pr,
+                            category: category,
+                            route: route,
+                            eventId: m.eventId,
+                          ));
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artikel aktualisiert')));
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
+                        }
+                      }
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete),
+                    onPressed: () async {
+                      try {
+                        await MenuRepo().deleteItem(m.id);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artikel gelöscht')));
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
+                      }
+                    },
+                  ),
+                ],
               ),
             );
           },

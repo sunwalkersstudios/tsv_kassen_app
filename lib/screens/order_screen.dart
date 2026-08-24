@@ -24,7 +24,6 @@ class _OrderScreenState extends State<OrderScreen> {
   @override
   void initState() {
     super.initState();
-    // Open or get ticket once, outside of build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initTicketSelection();
     });
@@ -39,7 +38,6 @@ class _OrderScreenState extends State<OrderScreen> {
         orElse: () => TableEntity(id: widget.tableId, name: widget.tableId, row: 0, col: 0),
       ).name;
       final repo = TicketsRepo();
-      // Fetch all unpaid tickets from server for this table (avoid cache)
       final existing = await repo.fetchUnpaidTicketsForTable(widget.tableId);
       if (!mounted) return;
       if (existing.isEmpty) {
@@ -52,12 +50,11 @@ class _OrderScreenState extends State<OrderScreen> {
         setState(() => _ticketId = existing.first['id'] as String);
         return;
       }
-      // Multiple unpaid tickets -> let user choose
       final selectedId = await showDialog<String>(
         context: context,
         builder: (ctx) {
           return AlertDialog(
-            title: Text('Ticket auswählen – ${tableName.isNotEmpty ? tableName : widget.tableId}') ,
+            title: Text('Ticket auswählen – ${tableName.isNotEmpty ? tableName : widget.tableId}'),
             content: SizedBox(
               width: 420,
               child: ListView(
@@ -86,7 +83,6 @@ class _OrderScreenState extends State<OrderScreen> {
       );
       if (!mounted) return;
       if (selectedId == null) {
-        // User aborted selection; keep screen idle with message
         setState(() => _error = 'Auswahl abgebrochen');
         return;
       }
@@ -118,21 +114,21 @@ class _OrderScreenState extends State<OrderScreen> {
 
   @override
   Widget build(BuildContext context) {
-  final events = context.watch<EventsProvider>();
-  final activeEventId = events.activeEvent?.id;
-  final menuStream = MenuRepo().streamForService(activeEventId: activeEventId);
-  final ticketsRepo = TicketsRepo();
+    final events = context.watch<EventsProvider>();
+    final activeEventId = events.activeEvent?.id;
+    final menuStream = MenuRepo().streamForService(activeEventId: activeEventId);
+    final ticketsRepo = TicketsRepo();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Bestellung')),
-    body: _ticketId == null
-      ? (_error != null
-        ? Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('Fehler: $_error')))
-        : const Center(child: CircularProgressIndicator()))
+      body: _ticketId == null
+          ? (_error != null
+              ? Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('Fehler: $_error')))
+              : const Center(child: CircularProgressIndicator()))
           : Column(
               children: [
                 Expanded(
-                  child: StreamBuilder(
+                  child: StreamBuilder<List<MenuItemEntity>>(
                     stream: menuStream,
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
@@ -145,75 +141,98 @@ class _OrderScreenState extends State<OrderScreen> {
                       if (items.isEmpty) {
                         return const Center(child: Text('Keine Menüartikel gefunden'));
                       }
+
+                      final drinks = items.where((m) => m.category.toLowerCase() == 'getränke'.toLowerCase()).toList();
+                      final food = items.where((m) => m.category.toLowerCase() == 'speisen'.toLowerCase()).toList();
+                      final grill = items.where((m) => m.category.toLowerCase() == 'grillhütte'.toLowerCase()).toList();
+                      final knownIds = {
+                        ...drinks.map((e) => e.id),
+                        ...food.map((e) => e.id),
+                        ...grill.map((e) => e.id),
+                      };
+                      final rest = items.where((m) => !knownIds.contains(m.id)).toList();
+
+                      Widget itemTile(MenuItemEntity m) {
+                        return ListTile(
+                          title: Text('${m.name} - €${m.price.toStringAsFixed(2)}'),
+                          subtitle: Text('${m.category} • Route: ${m.route}'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.note_add_outlined),
+                                tooltip: 'Extrawunsch hinzufügen',
+                                onPressed: () async {
+                                  if (_ticketId == null) return;
+                                  final notesCtrl = TextEditingController();
+                                  final add = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: Text('Extrawunsch zu ${m.name}'),
+                                      content: TextField(
+                                        controller: notesCtrl,
+                                        decoration: const InputDecoration(hintText: 'z. B. ohne Eis, extra Ketchup'),
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+                                        ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Hinzufügen')),
+                                      ],
+                                    ),
+                                  );
+                                  if (add == true) {
+                                    await ticketsRepo.addItem(
+                                      ticketId: _ticketId!,
+                                      tableId: widget.tableId,
+                                      menuItemId: m.id,
+                                      qty: 1,
+                                      route: m.route,
+                                      name: m.name,
+                                      price: m.price,
+                                      category: m.category,
+                                      notes: notesCtrl.text.trim(),
+                                    );
+                                  }
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add),
+                                onPressed: () {
+                                  if (_ticketId == null) return;
+                                  ticketsRepo.addItem(
+                                    ticketId: _ticketId!,
+                                    tableId: widget.tableId,
+                                    menuItemId: m.id,
+                                    qty: 1,
+                                    route: m.route,
+                                    name: m.name,
+                                    price: m.price,
+                                    category: m.category,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      List<Widget> buildSection(String title, List<MenuItemEntity> list) {
+                        if (list.isEmpty) return [];
+                        return [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                            child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          ...list.map(itemTile),
+                          const Divider(),
+                        ];
+                      }
+
                       return ListView(
                         children: [
-                          const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Text('Artikel', style: TextStyle(fontWeight: FontWeight.bold)),
-                          ),
-                          ...items.map((m) => ListTile(
-                                title: Text('${m.name} - €${m.price.toStringAsFixed(2)}'),
-                                subtitle: Text('${m.category} • Route: ${m.route}'),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.note_add_outlined),
-                                      tooltip: 'Extrawunsch hinzufügen',
-                                      onPressed: () async {
-                                        if (_ticketId == null) return;
-                                        final notesCtrl = TextEditingController();
-                                        final add = await showDialog<bool>(
-                                          context: context,
-                                          builder: (ctx) => AlertDialog(
-                                            title: Text('Extrawunsch zu ${m.name}'),
-                                            content: TextField(
-                                              controller: notesCtrl,
-                                              decoration: const InputDecoration(hintText: 'z. B. ohne Eis, extra Ketchup'),
-                                            ),
-                                            actions: [
-                                              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
-                                              ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Hinzufügen')),
-                                            ],
-                                          ),
-                                        );
-                                        if (add == true) {
-                                          final derivedRoute = m.category == 'Getränke' ? 'bar' : 'kitchen';
-                                          await ticketsRepo.addItem(
-                                            ticketId: _ticketId!,
-                                            tableId: widget.tableId,
-                                            menuItemId: m.id,
-                                            qty: 1,
-                                            route: derivedRoute,
-                                            name: m.name,
-                                            price: m.price,
-                                            category: m.category,
-                                            notes: notesCtrl.text.trim(),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.add),
-                                      onPressed: () {
-                                        if (_ticketId == null) return;
-                                        final derivedRoute = m.category == 'Getränke' ? 'bar' : 'kitchen';
-                                        ticketsRepo.addItem(
-                                          ticketId: _ticketId!,
-                                          tableId: widget.tableId,
-                                          menuItemId: m.id,
-                                          qty: 1,
-                                          route: derivedRoute,
-                                          name: m.name,
-                                          price: m.price,
-                                          category: m.category,
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              )),
-                          const Divider(),
+                          ...buildSection('Getränke', drinks),
+                          ...buildSection('Speisen', food),
+                          ...buildSection('Grillhütte', grill),
+                          ...buildSection('Sonstiges', rest),
                           const Padding(
                             padding: EdgeInsets.all(8.0),
                             child: Text('Ticket-Positionen', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -236,8 +255,33 @@ class _OrderScreenState extends State<OrderScreen> {
                                     child: Text('Noch keine Positionen'),
                                   );
                                 }
-                                return Column(
-                                  children: tItems.map((i) {
+                                final readyCount = tItems
+                                    .where((i) => (i.status == TicketStatus.ready) && (i.route == 'kitchen' || i.route == 'bar'))
+                                    .length;
+                                final children = <Widget>[];
+                                if (readyCount > 0) {
+                                  children.add(
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: OutlinedButton.icon(
+                                          icon: const Icon(Icons.done_all),
+                                          label: Text('Alle serviert ($readyCount)'),
+                                          onPressed: () async {
+                                            await ticketsRepo.markAllReadyServed(_ticketId!);
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('Alle fertigen Artikel als serviert markiert.')),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                children.addAll(tItems.map((i) {
                                     final idx = items.indexWhere((m) => m.id == i.menuItemId);
                                     if (idx == -1) {
                                       return ListTile(
@@ -246,21 +290,60 @@ class _OrderScreenState extends State<OrderScreen> {
                                       );
                                     }
                                     final menuItem = items[idx];
+                                    final isKitchenBar = menuItem.route == 'kitchen' || menuItem.route == 'bar';
+                                    final isReady = i.status == TicketStatus.ready;
+                                    final isServed = i.status == TicketStatus.served;
+                                    final bool markRed = isKitchenBar && (i.status == TicketStatus.open || i.status == TicketStatus.sentToKitchen);
+                                    final Color? tileColor = isKitchenBar
+                                      ? (isReady
+                                        ? Colors.green.shade50
+                                        : (isServed
+                                          ? Colors.blue.shade50
+                                          : (markRed ? Colors.red.shade50 : null)))
+                                      : null;
+                                    final Color? titleColor = isKitchenBar
+                                      ? (isReady
+                                        ? Colors.green.shade800
+                                        : (isServed
+                                          ? Colors.blue.shade800
+                                          : (markRed ? Colors.red.shade800 : null)))
+                                      : null;
                                     return ListTile(
+                                      tileColor: tileColor,
                                       title: Text('${menuItem.name} x${i.qty} - €${(menuItem.price * i.qty).toStringAsFixed(2)}'),
+                                      titleTextStyle: titleColor != null
+                                          ? Theme.of(context).textTheme.titleMedium?.copyWith(color: titleColor)
+                                          : Theme.of(context).textTheme.titleMedium,
                                       subtitle: Text('${menuItem.category} • Route: ${menuItem.route} • Status: ${i.status.name}${i.notes.isNotEmpty ? ' • Hinweis: ${i.notes}' : ''}'),
-                                      trailing: i.status == TicketStatus.open
-                                          ? IconButton(
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (i.status == TicketStatus.open)
+                                            IconButton(
                                               icon: const Icon(Icons.delete_outline),
                                               tooltip: 'Position entfernen',
                                               onPressed: () async {
                                                 await ticketsRepo.deleteItem(ticketId: _ticketId!, itemId: i.id);
                                               },
-                                            )
-                                          : null,
+                                            ),
+                                          if (isKitchenBar && i.status == TicketStatus.ready)
+                                            IconButton(
+                                              icon: const Icon(Icons.done_all),
+                                              tooltip: 'Als serviert markieren',
+                                              onPressed: () async {
+                                                await ticketsRepo.markItemServed(_ticketId!, i.id);
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(content: Text('${menuItem.name} serviert markiert')),
+                                                  );
+                                                }
+                                              },
+                                            ),
+                                        ],
+                                      ),
                                     );
-                                  }).toList(),
-                                );
+                                  }).toList());
+                                return Column(children: children);
                               },
                             ),
                         ],
@@ -278,7 +361,6 @@ class _OrderScreenState extends State<OrderScreen> {
                             onPressed: _ticketId == null
                                 ? null
                                 : () async {
-                                    // We can't easily count open items without another stream; just send and show generic feedback
                                     await ticketsRepo.sendTicket(_ticketId!);
                                     if (context.mounted) {
                                       ScaffoldMessenger.of(context).showSnackBar(
@@ -296,26 +378,56 @@ class _OrderScreenState extends State<OrderScreen> {
                             onPressed: _ticketId == null
                                 ? null
                                 : () async {
-                                    // Choose pay mode: full, split half, or select items
+                                    // Berechne Beträge für das Popup - nur servierte Items
+                                    final raw = await ticketsRepo.getItemsRaw(_ticketId!);
+                                    final servedUnpaidItems = raw.where((m) {
+                                      final status = (m['status'] ?? 'open').toString();
+                                      // Nur servierte Items (routed/ready/billable), keine offenen oder bezahlten
+                                      return status != 'paid' && status != 'open';
+                                    }).toList();
+                                    
+                                    double totalUnpaid = 0.0;
+                                    for (final m in servedUnpaidItems) {
+                                      final qty = (m['qty'] as num?)?.toInt() ?? 1;
+                                      final price = (m['price'] as num?)?.toDouble() ?? 0.0;
+                                      totalUnpaid += qty * price;
+                                    }
+                                    
+                                    final halfAmount = totalUnpaid / 2;
+                                    
+                                    if (!mounted) return;
                                     String? mode = await showModalBottomSheet<String>(
                                       context: context,
                                       builder: (ctx) => SafeArea(
                                         child: Column(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
+                                            Padding(
+                                              padding: const EdgeInsets.all(16),
+                                              child: Text(
+                                                'Zahlungsoptionen',
+                                                style: Theme.of(context).textTheme.titleLarge,
+                                              ),
+                                            ),
                                             ListTile(
                                               leading: const Icon(Icons.payments),
-                                              title: const Text('Gesamtes Ticket bezahlen'),
+                                              title: const Text('Gesamtrechnung'),
+                                              subtitle: Text('€${totalUnpaid.toStringAsFixed(2)}'),
+                                              trailing: const Icon(Icons.arrow_forward),
                                               onTap: () => Navigator.of(ctx).pop('full'),
                                             ),
                                             ListTile(
                                               leading: const Icon(Icons.call_split),
                                               title: const Text('Rechnung halbieren (50/50)'),
+                                              subtitle: Text('€${halfAmount.toStringAsFixed(2)} pro Person'),
+                                              trailing: const Icon(Icons.arrow_forward),
                                               onTap: () => Navigator.of(ctx).pop('half'),
                                             ),
                                             ListTile(
                                               leading: const Icon(Icons.checklist),
-                                              title: const Text('Einzelne Artikel auswählen'),
+                                              title: const Text('Teilrechnung (Artikel auswählen)'),
+                                              subtitle: const Text('Betrag nach Auswahl'),
+                                              trailing: const Icon(Icons.arrow_forward),
                                               onTap: () => Navigator.of(ctx).pop('select'),
                                             ),
                                           ],
@@ -326,14 +438,28 @@ class _OrderScreenState extends State<OrderScreen> {
 
                                     String? saleId;
                                     if (mode == 'full') {
-                                      saleId = await ticketsRepo.markTicketPaid(_ticketId!);
+                                      try {
+                                        saleId = await ticketsRepo.markTicketPaid(_ticketId!);
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Nur servierte Artikel können bezahlt werden.')), 
+                                          );
+                                        }
+                                        return;
+                                      }
                                     } else if (mode == 'half') {
-                                      // 50/50: Greedy selection of items to approximate half of total
                                       final raw = await ticketsRepo.getItemsRaw(_ticketId!);
-                                      final unpaid = raw.where((m) => (m['status'] ?? 'open') != 'paid').toList();
-                                      if (unpaid.isEmpty) return;
-                                      // Compute totals per item (qty * price), sort desc
-                                      final itemsWithTotal = unpaid.map((m) {
+                                      final served = raw.where((m) => (m['status'] ?? 'open') == 'served').toList();
+                                      if (served.isEmpty) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Keine servierten Artikel für 50/50 vorhanden.')), 
+                                          );
+                                        }
+                                        return;
+                                      }
+                                      final itemsWithTotal = served.map((m) {
                                         final qty = (m['qty'] as num?)?.toInt() ?? 1;
                                         final price = (m['price'] as num?)?.toDouble() ?? 0.0;
                                         return {
@@ -352,13 +478,20 @@ class _OrderScreenState extends State<OrderScreen> {
                                         acc += (m['lineTotal'] as double);
                                       }
                                       if (selectedIds.isEmpty) {
-                                        // Fallback: select the first item
                                         selectedIds.add(itemsWithTotal.first['id'] as String);
                                       }
-                                      saleId = await ticketsRepo.paySelectedItems(_ticketId!, selectedIds);
+                                      try {
+                                        saleId = await ticketsRepo.paySelectedItems(_ticketId!, selectedIds);
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Nur servierte Artikel können bezahlt werden.')), 
+                                          );
+                                        }
+                                        return;
+                                      }
                                     }
                                     if (mode == 'select') {
-                                      // Build selection UI from raw items to access prices
                                       final raw = await ticketsRepo.getItemsRaw(_ticketId!);
                                       final selectable = raw.where((m) => (m['status'] ?? 'open') != 'paid').toList();
                                       final selected = <String>{};
@@ -396,21 +529,27 @@ class _OrderScreenState extends State<OrderScreen> {
                                                               final qty = (m['qty'] as num?)?.toInt() ?? 1;
                                                               final price = (m['price'] as num?)?.toDouble() ?? 0.0;
                                                               final notes = (m['notes'] ?? '').toString();
+                                                              final st = (m['status'] ?? 'open').toString();
                                                               final line = qty * price;
                                                               return CheckboxListTile(
                                                                 value: selected.contains(id),
-                                                                onChanged: (v) {
-                                                                  setStateDlg(() {
-                                                                    if (v == true) {
-                                                                      selected.add(id);
-                                                                    } else {
-                                                                      selected.remove(id);
-                                                                    }
-                                                                    selTotal = computeTotal();
-                                                                  });
-                                                                },
+                                                                onChanged: st == 'served'
+                                                                    ? (v) {
+                                                                        setStateDlg(() {
+                                                                          if (v == true) {
+                                                                            selected.add(id);
+                                                                          } else {
+                                                                            selected.remove(id);
+                                                                          }
+                                                                          selTotal = computeTotal();
+                                                                        });
+                                                                      }
+                                                                    : null,
                                                                 title: Text('$name x$qty — €${line.toStringAsFixed(2)}'),
-                                                                subtitle: notes.isNotEmpty ? Text(notes) : null,
+                                                                subtitle: Text([
+                                                                  if (notes.isNotEmpty) notes,
+                                                                  if (st != 'served') 'Noch nicht serviert',
+                                                                ].join(' • ')),
                                                               );
                                                             }),
                                                         ],
@@ -433,7 +572,16 @@ class _OrderScreenState extends State<OrderScreen> {
                                         },
                                       );
                                       if (confirmed == true && selected.isNotEmpty) {
-                                        saleId = await ticketsRepo.paySelectedItems(_ticketId!, selected.toList());
+                                        try {
+                                          saleId = await ticketsRepo.paySelectedItems(_ticketId!, selected.toList());
+                                        } catch (e) {
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(content: Text('Nur servierte Artikel können bezahlt werden.')), 
+                                            );
+                                          }
+                                          return;
+                                        }
                                       } else {
                                         return;
                                       }
@@ -469,7 +617,6 @@ class _OrderScreenState extends State<OrderScreen> {
                                         final receipt = ReceiptService();
                                         await receipt.printSale(saleId);
                                       } else if (saleId != null && choice == 'bewirtung') {
-                                        // Print a blank hospitality receipt with placeholders for guest to fill
                                         final receipt = ReceiptService();
                                         await receipt.printHospitalityReceipt(saleId);
                                       }

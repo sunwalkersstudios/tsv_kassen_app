@@ -3,6 +3,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 13+ runtime notification permission -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- Bluetooth permissions for printer connectivity -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <!-- For Android 12+ (API 31+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+                     android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Location permission required for Bluetooth scanning on Android 10-11 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" 
+                     android:maxSdkVersion="30" />
+    
     <application
         android:label="tsv"
         android:name="${applicationName}"

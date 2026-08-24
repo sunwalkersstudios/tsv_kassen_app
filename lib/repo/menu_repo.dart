@@ -66,8 +66,29 @@ class MenuRepo {
       'price': e.price,
       'category': e.category,
       'route': e.route,
-      'eventId': e.eventId,
+      // Persist sentinel 'base' for null (base) to keep queries working
+      'eventId': e.eventId ?? 'base',
     }, SetOptions(merge: true));
+  }
+
+  // Maintenance: Normalize any menu docs missing the 'eventId' to 'base'
+  Future<int> normalizeBaseEventIds() async {
+    final col = _db.collection('menu');
+    final snap = await col.get();
+    int updated = 0;
+    final batch = _db.batch();
+    for (final d in snap.docs) {
+      final data = d.data();
+      final ev = data['eventId'];
+      if (ev == null || (ev is String && ev.trim().isEmpty)) {
+        batch.set(d.reference, {'eventId': 'base'}, SetOptions(merge: true));
+        updated++;
+      }
+    }
+    if (updated > 0) {
+      await batch.commit();
+    }
+    return updated;
   }
 
   Future<void> deleteItem(String id) async {

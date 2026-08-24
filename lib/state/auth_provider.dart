@@ -5,6 +5,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:async';
 import '../models/entities.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../repo/settings_repo.dart';
+import 'device_context.dart';
 
 class AuthProvider extends ChangeNotifier {
   FirebaseAuth? _auth;
@@ -130,6 +132,7 @@ class AuthProvider extends ChangeNotifier {
     final data = doc.data() ?? {};
     String? roleStr = data['role'] as String?;
     String displayName = (data['displayName'] as String?) ?? firebaseUser.email?.split('@').first ?? firebaseUser.uid;
+    final String? orgId = (data['orgId'] as String?)?.trim();
 
     // If role missing, derive from email prefix and write back
     if (roleStr == null || roleStr.isEmpty) {
@@ -143,8 +146,35 @@ class AuthProvider extends ChangeNotifier {
       }, SetOptions(merge: true));
     }
 
-    final role = _roleFromString(roleStr);
+    var role = _roleFromString(roleStr);
+    // If kitchen/bar merged, map bar role to kitchen for navigation
+    try {
+      final merged = await SettingsRepo().getMergeKitchenBar();
+      if (merged && role == UserRole.bar) {
+        role = UserRole.kitchen;
+      }
+    } catch (_) {/* ignore */}
     _user = UserProfile(uid: firebaseUser.uid, displayName: displayName, role: role);
+
+    // Populate per-device org context for single-tenant settings/templates
+    if (orgId != null && orgId.isNotEmpty) {
+      DeviceContext.deviceOrgId = orgId;
+      try {
+        final orgSnap = await _db!.collection('orgs').doc(orgId).get();
+        final orgName = (orgSnap.data()?['name'] as String?)?.trim();
+        if (orgName != null && orgName.isNotEmpty) {
+          DeviceContext.deviceOrgName = orgName;
+        }
+      } catch (_) {/* ignore name fetch errors */}
+      // Best-effort cache for convenience
+      try {
+        final sp = await SharedPreferences.getInstance();
+        await sp.setString('deviceOrgId', orgId);
+        if (DeviceContext.deviceOrgName != null) {
+          await sp.setString('deviceOrgName', DeviceContext.deviceOrgName!);
+        }
+      } catch (_) {/* ignore */}
+    }
   }
 
   UserRole _roleFromString(String s) {

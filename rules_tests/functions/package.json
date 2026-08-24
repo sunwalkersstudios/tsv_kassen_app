@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "rules-tests": "file:.."
+  }
+}

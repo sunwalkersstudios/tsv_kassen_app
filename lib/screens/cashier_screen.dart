@@ -262,6 +262,7 @@ class _CashierScreenState extends State<CashierScreen> {
                     SizedBox(
                       width: 120,
                       child: TextFormField(
+                        // ignore: deprecated_member_use
                         initialValue: _openingCash.toStringAsFixed(2),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         onFieldSubmitted: (v) {
@@ -276,6 +277,7 @@ class _CashierScreenState extends State<CashierScreen> {
                     SizedBox(
                       width: 110,
                       child: TextFormField(
+                        // ignore: deprecated_member_use
                         initialValue: _deposit.toStringAsFixed(2),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         onFieldSubmitted: (v) {
@@ -290,6 +292,7 @@ class _CashierScreenState extends State<CashierScreen> {
                     SizedBox(
                       width: 110,
                       child: TextFormField(
+                        // ignore: deprecated_member_use
                         initialValue: _withdrawal.toStringAsFixed(2),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         onFieldSubmitted: (v) {

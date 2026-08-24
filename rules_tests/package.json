@@ -1,0 +1,12 @@
+{
+  "name": "rules-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore \"node e2e_rules.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.0",
+    "firebase-admin": "^12.6.0"
+  }
+}

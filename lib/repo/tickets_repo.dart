@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'settings_repo.dart';
 
 import '../models/entities.dart';
 
@@ -87,7 +88,13 @@ class TicketsRepo {
         .doc(ticketId)
         .collection('items')
         .snapshots()
-        .map((snap) => snap.docs.map((d) {
+        .map((snap) => snap.docs
+            .where((d) {
+              // Filtere bezahlte Artikel aus - die gehören nicht mehr ins Ticket
+              final status = (d.data()['status'] as String?) ?? 'open';
+              return status != 'paid';
+            })
+            .map((d) {
               final m = d.data();
               return TicketItemEntity(
                 id: d.id,
@@ -149,22 +156,55 @@ class TicketsRepo {
   }
 
   Future<void> sendTicket(String ticketId) async {
+    // Load open items
     final itemsSnap = await _db
         .collection('tickets')
         .doc(ticketId)
         .collection('items')
         .where('status', isEqualTo: 'open')
         .get();
+
     final batch = _db.batch();
+    bool anyBar = false;
+  // Track bar presence to set routesReady; kitchen is inferred by remaining items
+
+    // Check setting: merge bar and kitchen
+    final merged = await SettingsRepo().getMergeKitchenBar();
+
     for (final d in itemsSnap.docs) {
-      batch.update(d.reference, {'status': 'sentToKitchen'});
+      final data = d.data();
+      final route = (data['route'] ?? '').toString();
+      if (merged && route == 'bar') {
+        // Immediately mark bar items as ready when merged
+        batch.update(d.reference, {'status': 'ready'});
+        anyBar = true;
+      } else {
+        batch.update(d.reference, {'status': 'sentToKitchen'});
+  if (route == 'bar') anyBar = true; // keep flag for routesReady
+      }
     }
     await batch.commit();
+
     // Update ticket doc only if it exists to avoid NOT_FOUND
     final ticketRef = _db.collection('tickets').doc(ticketId);
     final ticketSnap = await ticketRef.get();
     if (ticketSnap.exists) {
-      await ticketRef.update({'status': 'sentToKitchen', 'updatedAt': FieldValue.serverTimestamp()});
+      // Set status to sentToKitchen unless all items are already ready
+      final updateData = <String, dynamic>{
+        'status': 'sentToKitchen',
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (anyBar && merged) {
+        updateData['routesReady.bar'] = true;
+      }
+      await ticketRef.set(updateData, SetOptions(merge: true));
+
+      // If after updates all items are ready, mark ticket as ready
+      final allSnap = await ticketRef.collection('items').get();
+      final allReady = allSnap.docs.isNotEmpty && allSnap.docs.every((e) => ((e.data()['status'] as String?) ?? 'open') == 'ready');
+      if (allReady) {
+        await ticketRef.update({'status': 'ready'});
+      }
     }
   }
 
@@ -200,6 +240,67 @@ class TicketsRepo {
     }
   }
 
+  Future<void> markItemReady(String ticketId, String itemId) async {
+    final ticketRef = _db.collection('tickets').doc(ticketId);
+    final itemRef = ticketRef.collection('items').doc(itemId);
+    final itemSnap = await itemRef.get();
+    if (!itemSnap.exists) return;
+    final data = itemSnap.data()!;
+    final st = (data['status'] as String?) ?? 'open';
+    final route = (data['route'] ?? '').toString();
+    if (st == 'ready' || st == 'paid') return;
+    await itemRef.update({'status': 'ready'});
+
+    // After updating this item, if all items for its route are ready, mark routesReady.<route> true
+    final routeItemsSnap = await ticketRef.collection('items').where('route', isEqualTo: route).get();
+    final allRouteReady = routeItemsSnap.docs.isNotEmpty &&
+        routeItemsSnap.docs.every((d) => ((d.data()['status'] as String?) ?? 'open') == 'ready');
+    if (allRouteReady) {
+      await ticketRef.set({
+        'routesReady': {route: true},
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } else {
+      await ticketRef.set({
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    // If all items ready overall, mark ticket as ready
+    final allSnap = await ticketRef.collection('items').get();
+    final allReady = allSnap.docs.isNotEmpty &&
+        allSnap.docs.every((d) => ((d.data()['status'] as String?) ?? 'open') == 'ready');
+    if (allReady) {
+      await ticketRef.update({'status': 'ready'});
+    }
+  }
+
+  Future<void> markItemServed(String ticketId, String itemId) async {
+    final itemRef = _db.collection('tickets').doc(ticketId).collection('items').doc(itemId);
+    final snap = await itemRef.get();
+    if (!snap.exists) return;
+    final data = snap.data()!;
+    final st = (data['status'] as String?) ?? 'open';
+    if (st == 'paid' || st == 'served') return;
+    if (st != 'ready') return; // only allow served after ready
+    await itemRef.update({'status': 'served', 'servedAt': FieldValue.serverTimestamp()});
+  }
+
+  Future<void> markAllReadyServed(String ticketId, {String? route}) async {
+    final itemsRef = _db.collection('tickets').doc(ticketId).collection('items');
+    Query<Map<String, dynamic>> q = itemsRef.where('status', isEqualTo: 'ready');
+    if (route != null && route.isNotEmpty) {
+      q = q.where('route', isEqualTo: route);
+    }
+    final snap = await q.get();
+    if (snap.docs.isEmpty) return;
+    final batch = _db.batch();
+    for (final d in snap.docs) {
+      batch.update(d.reference, {'status': 'served', 'servedAt': FieldValue.serverTimestamp()});
+    }
+    await batch.commit();
+  }
+
   Future<String?> getTicketTableId(String ticketId) async {
     final doc = await _db.collection('tickets').doc(ticketId).get();
     return (doc.data() ?? const {})['tableId'] as String?;
@@ -221,7 +322,7 @@ class TicketsRepo {
     final tableName = (tData['tableName'] as String?) ?? '';
     final serverId = (tData['serverId'] as String?) ?? '';
 
-    // Load items to compute totals and capture sale lines (only items not already paid)
+    // Load items to compute totals and capture sale lines (only items that are served and not already paid)
     final itemsSnap = await ticketRef.collection('items').get();
     double total = 0;
     final saleItems = <Map<String, dynamic>>[];
@@ -230,6 +331,7 @@ class TicketsRepo {
       final m = d.data();
       final st = (m['status'] as String?) ?? 'open';
       if (st == 'paid') continue;
+      if (st != 'served') continue; // enforce served before payment
       final qty = (m['qty'] as num?)?.toInt() ?? 1;
       final price = (m['price'] as num?)?.toDouble() ?? 0.0;
       final lineTotal = price * qty;
@@ -244,6 +346,10 @@ class TicketsRepo {
         'lineTotal': lineTotal,
       });
       toMarkPaid.add(d.reference);
+    }
+
+    if (saleItems.isEmpty) {
+      throw Exception('Keine servierten Artikel zum Bezahlen gefunden.');
     }
 
     // Day key for quick queries (YYYY-MM-DD)
@@ -299,7 +405,12 @@ class TicketsRepo {
       final snap = await ref.get();
       if (!snap.exists) continue;
       final m = snap.data()!;
-      if ((m['status'] as String?) == 'paid') continue;
+      final st = (m['status'] as String?) ?? 'open';
+      if (st == 'paid') continue;
+      if (st != 'served') {
+        // selecting non-served item is not allowed
+        throw Exception('Nicht servierter Artikel in Auswahl: ${(m['name'] ?? m['menuItemId']).toString()}');
+      }
       final qty = (m['qty'] as num?)?.toInt() ?? 1;
       final price = (m['price'] as num?)?.toDouble() ?? 0.0;
       final lineTotal = price * qty;
@@ -314,6 +425,10 @@ class TicketsRepo {
         'lineTotal': lineTotal,
       });
       toMarkPaid.add(ref);
+    }
+
+    if (saleItems.isEmpty) {
+      throw Exception('Keine servierten Artikel in der Auswahl.');
     }
 
     final now = DateTime.now();
@@ -412,6 +527,31 @@ class TicketsRepo {
     });
   }
 
+  // Stream ready items grouped by table and route, using denormalized item names
+  // Returns: { tableId: { 'kitchen': [ {name, qty}... ], 'bar': [...] } }
+  Stream<Map<String, Map<String, List<Map<String, dynamic>>>>> streamReadyItemsByTable() {
+    return _db
+        .collectionGroup('items')
+        .where('status', isEqualTo: 'ready')
+        .snapshots()
+        .map((snap) {
+      final result = <String, Map<String, List<Map<String, dynamic>>>>{};
+      for (final d in snap.docs) {
+        final data = d.data();
+        // final parent = d.reference.parent.parent; // tickets/{id} (not needed currently)
+        final tableId = (data['tableId'] ?? '').toString();
+        if (tableId.isEmpty) continue;
+        final route = (data['route'] ?? '').toString();
+        if (route != 'kitchen' && route != 'bar') continue;
+        final name = (data['name'] ?? '').toString();
+        final qty = (data['qty'] as num?)?.toInt() ?? 1;
+        final perTable = result.putIfAbsent(tableId, () => {'kitchen': <Map<String, dynamic>>[], 'bar': <Map<String, dynamic>>[]});
+        perTable[route]!.add({'name': name, 'qty': qty});
+      }
+      return result;
+    });
+  }
+
   // Same as above, but across all servers (any owner)
   Stream<Map<String, Map<String, bool>>> streamRouteFlagsAll() {
     return _db
@@ -468,6 +608,41 @@ class TicketsRepo {
             }).where((m) => m['status'] == 'open' || m['status'] == 'sentToKitchen').toList());
   }
 
+  // Stream pending items for both kitchen and bar (merged view)
+  Stream<List<Map<String, dynamic>>> streamPendingMerged() {
+    return _db
+        .collectionGroup('items')
+        .snapshots()
+        .map((snap) => snap.docs.map((d) {
+              final data = d.data();
+              final ticketRef = d.reference.parent.parent!; // tickets/{id}
+              final tableId = (data['tableId'] ?? '').toString();
+              final menuItemId = (data['menuItemId'] ?? '').toString();
+              final qty = (data['qty'] as num?)?.toInt() ?? 1;
+              final status = (data['status'] ?? 'open').toString();
+              final r = (data['route'] ?? '').toString();
+              final name = (data['name'] ?? '').toString();
+              final notes = (data['notes'] ?? '').toString();
+              return {
+                'ticketId': ticketRef.id,
+                'tableId': tableId.isEmpty ? null : tableId,
+                'menuItemId': menuItemId,
+                'qty': qty,
+                'status': status,
+                'route': r,
+                'itemId': d.id,
+                'name': name,
+                'notes': notes,
+              };
+            })
+            .where((m) {
+              final st = m['status'];
+              final r = m['route'];
+              return (st == 'open' || st == 'sentToKitchen') && (r == 'kitchen' || r == 'bar');
+            })
+            .toList());
+  }
+
   static TicketStatus _statusFromString(String s) {
     switch (s) {
       case 'open':
@@ -483,6 +658,45 @@ class TicketsRepo {
       default:
         return TicketStatus.open;
     }
+  }
+
+  /// Stream der offenen Beträge (unbezahlt) pro Tisch
+  /// Returns Map<tableId, openAmount>
+  Stream<Map<String, double>> streamOpenAmountsByTable() {
+    return _db.collection('tickets').snapshots().asyncMap((ticketsSnap) async {
+      final amountsByTable = <String, double>{};
+      
+      for (final ticketDoc in ticketsSnap.docs) {
+        final ticketData = ticketDoc.data();
+        final tableId = (ticketData['tableId'] as String?) ?? '';
+        if (tableId.isEmpty) continue;
+        
+        // Ignoriere komplett bezahlte Tickets
+        final ticketStatus = (ticketData['status'] as String?) ?? 'open';
+        if (ticketStatus == 'paid') continue;
+        
+        // Lade alle Items für dieses Ticket (nur servierte, unbezahlte)
+        final itemsSnap = await ticketDoc.reference.collection('items').get();
+        double tableTotal = 0.0;
+        
+        for (final itemDoc in itemsSnap.docs) {
+          final itemData = itemDoc.data();
+          final status = (itemData['status'] as String?) ?? 'open';
+          // Nur servierte Items (routed/ready/billable), keine offenen oder bezahlten
+          if (status == 'paid' || status == 'open') continue;
+          
+          final qty = (itemData['qty'] as num?)?.toInt() ?? 1;
+          final price = (itemData['price'] as num?)?.toDouble() ?? 0.0;
+          tableTotal += qty * price;
+        }
+        
+        if (tableTotal > 0) {
+          amountsByTable[tableId] = (amountsByTable[tableId] ?? 0.0) + tableTotal;
+        }
+      }
+      
+      return amountsByTable;
+    });
   }
 
   // ADMIN/MAINT: delete all tickets (and their items). Use with caution.

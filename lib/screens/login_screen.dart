@@ -76,19 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                icon: const Icon(Icons.apartment_outlined),
-                onPressed: () async {
-                  // Allow starting fresh onboarding on this device
-                  await DeviceContext.clear();
-                  if (!mounted) return;
-                  context.go('/onboarding');
-                },
-                label: const Text('Neues Restaurant anlegen'),
-              ),
-            ),
+            // Onboarding removed/hidden: no entry point from login screen.
             if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             ElevatedButton(

@@ -13,7 +13,9 @@ import 'screens/admin_events_screen.dart';
 import 'screens/admin_menu_screen.dart';
 import 'screens/admin_tables_screen.dart';
 import 'screens/admin_print_template_screen.dart';
+import 'screens/admin_settings_screen.dart';
 import 'state/auth_provider.dart';
+import 'state/settings_provider.dart';
 import 'models/entities.dart';
 import 'screens/unlock_screen.dart';
 
@@ -23,13 +25,15 @@ class TsvApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final settings = context.watch<SettingsProvider>();
 
     String homeForRole(UserRole role) {
+      final merged = settings.mergeKitchenBar;
       switch (role) {
         case UserRole.kitchen:
           return '/kitchen';
         case UserRole.bar:
-          return '/bar';
+          return merged ? '/kitchen' : '/bar';
         case UserRole.admin:
           return '/admin';
         case UserRole.server:
@@ -39,7 +43,7 @@ class TsvApp extends StatelessWidget {
 
     final router = GoRouter(
       initialLocation: '/login',
-      refreshListenable: auth,
+      refreshListenable: Listenable.merge([auth, settings]),
       redirect: (context, state) {
         final loggedIn = auth.isAuthenticated;
         final loggingIn = state.matchedLocation == '/login';
@@ -47,6 +51,7 @@ class TsvApp extends StatelessWidget {
         final locked = auth.isLocked;
         final path = state.matchedLocation;
         final role = auth.user?.role;
+        final merged = settings.mergeKitchenBar;
 
         if (!loggedIn && !loggingIn) return '/login';
         if (loggedIn && locked && !unlocking) return '/unlock';
@@ -60,6 +65,10 @@ class TsvApp extends StatelessWidget {
           if (role != UserRole.admin) {
             return homeForRole(role ?? UserRole.server);
           }
+        }
+        // Hide/redirect bar when merged
+        if (loggedIn && !locked && merged && path.startsWith('/bar')) {
+          return '/kitchen';
         }
         // Guard: admin paths are admin-only
         if (loggedIn && !locked && path.startsWith('/admin')) {
@@ -124,6 +133,10 @@ class TsvApp extends StatelessWidget {
           builder: (context, state) => const AdminMenuScreen(),
         ),
         GoRoute(
+          path: '/admin/settings',
+          builder: (context, state) => const AdminSettingsScreen(),
+        ),
+        GoRoute(
           path: '/admin/print-template',
           builder: (context, state) => const AdminPrintTemplateScreen(),
         ),
@@ -148,19 +161,23 @@ class TsvApp extends StatelessWidget {
                     if (child != null) child,
                     // Floating button for quick user switch
                     if (context.read<AuthProvider>().isAuthenticated && !context.read<AuthProvider>().isLocked)
-                      Positioned(
-                        right: 16,
-                        // Place below status bar + typical AppBar height to avoid overlap
-                        top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
-                        child: FloatingActionButton.small(
-                          heroTag: 'switchUserFab',
-                          tooltip: 'Nutzer wechseln',
-                          onPressed: () {
-                            // Force logout and go to login screen
-                            context.read<AuthProvider>().logout();
-                            GoRouter.of(context).go('/login');
-                          },
-                          child: const Icon(Icons.switch_account),
+                      SafeArea(
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: Padding(
+                            // Slight offset from the very top, centered horizontally
+                            padding: const EdgeInsets.only(top: 6),
+                            child: FloatingActionButton.small(
+                              heroTag: 'switchUserFab',
+                              tooltip: 'Nutzer wechseln',
+                              onPressed: () {
+                                // Force logout and go to login screen
+                                context.read<AuthProvider>().logout();
+                                GoRouter.of(context).go('/login');
+                              },
+                              child: const Icon(Icons.switch_account),
+                            ),
+                          ),
                         ),
                       ),
                   ],

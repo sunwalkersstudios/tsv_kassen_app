@@ -2,14 +2,29 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'bluetooth_printer_service.dart';
 
 class ReceiptService {
   final _db = FirebaseFirestore.instance;
 
   /// Load printer configuration.
-  /// type: 'bon' (default for Kellner-Belege) or 'cashier' (Kassendrucker).
+  /// type: 'bon' (default for Kellner-Belege) or 'cashier' (Kassendrucker) or 'bluetooth'.
   Future<Map<String, dynamic>> _loadPrinter({String type = 'bon'}) async {
     final sp = await SharedPreferences.getInstance();
+    
+    // Prüfe ob Bluetooth-Drucker konfiguriert ist und bevorzuge diesen für 'bon'
+    if (type == 'bon') {
+      final btPrinterInfo = await BluetoothPrinterService().loadSavedPrinter();
+      if (btPrinterInfo != null) {
+        return {
+          'type': 'bluetooth',
+          'address': btPrinterInfo['address'],
+          'name': btPrinterInfo['name'],
+          'cols': 24, // Optimiert für 57mm Thermodrucker
+        };
+      }
+    }
+    
     String ip;
     int port;
     int cols;
@@ -31,7 +46,7 @@ class ReceiptService {
       cols = sp.getInt('bon_printer_cols') ?? 32; // default 58mm ≈ 32 chars
       mode = sp.getString('bon_printer_mode') ?? 'escpos';
     }
-    return {'ip': ip, 'port': port, 'cols': cols, 'mode': mode};
+    return {'type': 'network', 'ip': ip, 'port': port, 'cols': cols, 'mode': mode};
   }
 
   /// Save printer configuration.
@@ -135,8 +150,60 @@ class ReceiptService {
   }
 
   Future<Map<String, String>> _loadPlainTemplateSet(String type) async {
-    // type: 'cashier' or 'bon'
+    // type: 'cashier' or 'bon' or 'bluetooth'
     final sp = await SharedPreferences.getInstance();
+    
+    if (type == 'bluetooth') {
+      // Bluetooth Thermodrucker Vorlagen (72mm optimiert)
+      return {
+        'header': sp.getString('bt_thermal_header') ?? 
+          '            TSV KASSE\n'
+          '            ========================\n'
+          '            Ticket: {ticketId}\n'
+          '            Tisch:  {tableName}\n'
+          '            ========================\n'
+          '            Zeit:   {date}\n'
+          '            ========================\n',
+        'item': sp.getString('bt_thermal_item') ?? '            {qty}x {name}',
+        'footer': sp.getString('bt_thermal_footer') ?? 
+          '            ========================\n'
+          '            SUMME: {total} EUR\n'
+          '            Zahlung: {payment}\n'
+          '            ========================\n'
+          '            Kein MwSt-Ausweis\n'
+          '            gem. Par.19 UStG\n'
+          '            \n'
+          '            Vielen Dank!\n',
+        'hospitality': sp.getString('bt_thermal_hospitality') ?? 
+          '            BEWIRTUNGSBELEG\n'
+          '            ========================\n'
+          '            Datum: {date}\n'
+          '            \n'
+          '            Ort:\n'
+          '            ____________________\n'
+          '            \n'
+          '            Anzahl Personen:\n'
+          '            ____________________\n'
+          '            \n'
+          '            Bewirtete:\n'
+          '            ____________________\n'
+          '            \n'
+          '            Anlass/Grund:\n'
+          '            ____________________\n'
+          '            ========================\n'
+          '            Summe: {total}\n'
+          '            ========================\n'
+          '            Kein MwSt-Ausweis\n'
+          '            gem. Par.19 UStG\n'
+          '            \n'
+          '            Untersch. Bewirt.:\n'
+          '            ____________________\n'
+          '            \n'
+          '            Untersch. Empf.:\n'
+          '            ____________________\n',
+      };
+    }
+    
     final prefix = type == 'cashier' ? 'cash_plain_' : 'bon_plain_';
     return {
       'header': sp.getString('${prefix}header') ?? 'TSV Kasse\n{hr}\nTicket: {ticketId}\nTisch: {tableName}\nZeit: {date}\n{hr}',
@@ -159,6 +226,13 @@ class ReceiptService {
 
   Future<void> printSale(String id, {String printerType = 'bon'}) async {
     final printerCfg = await _loadPrinter(type: printerType);
+    
+    // Prüfe ob Bluetooth-Drucker konfiguriert ist
+    if (printerCfg['type'] == 'bluetooth') {
+      await _printSaleBluetooth(id, printerCfg);
+      return;
+    }
+    
     final ip = (printerCfg['ip'] as String).trim();
     final port = (printerCfg['port'] as int);
     final cols = (printerCfg['cols'] as int);
@@ -198,11 +272,25 @@ class ReceiptService {
       for (final line in header.split('\n')) {
         sb.writeln(line);
       }
+      // Group duplicate items
+      final grouped = <String, Map<String, dynamic>>{};
       for (final it in items) {
         final name = (it['name'] ?? it['menuItemId']).toString();
         final qty = (it['qty'] as num?)?.toInt() ?? 0;
         final price = (it['price'] as num?)?.toDouble() ?? 0.0;
         final totalLine = (it['lineTotal'] as num?)?.toDouble() ?? (price * qty);
+        if (grouped.containsKey(name)) {
+          grouped[name]!['qty'] = (grouped[name]!['qty'] as int) + qty;
+          grouped[name]!['lineTotal'] = (grouped[name]!['lineTotal'] as double) + totalLine;
+        } else {
+          grouped[name] = {'qty': qty, 'price': price, 'lineTotal': totalLine};
+        }
+      }
+      for (final entry in grouped.entries) {
+        final name = entry.key;
+        final qty = entry.value['qty'] as int;
+        final price = entry.value['price'] as double;
+        final totalLine = entry.value['lineTotal'] as double;
         final line = tpls['item']!
             .replaceAll('{qty}', qty.toString())
             .replaceAll('{name}', name)
@@ -244,11 +332,24 @@ class ReceiptService {
       final paidAt = (s['paidAt'] as Timestamp?)?.toDate();
       if (paidAt != null) esc.addAll(_text('Zeit: $paidAt'));
       esc.addAll(_hr(cols));
+      // Group duplicate items
+      final grouped = <String, Map<String, dynamic>>{};
       for (final it in items) {
         final name = (it['name'] ?? it['menuItemId']).toString();
         final qty = (it['qty'] as num?)?.toInt() ?? 0;
         final price = (it['price'] as num?)?.toDouble() ?? 0.0;
         final totalLine = (it['lineTotal'] as num?)?.toDouble() ?? (price * qty);
+        if (grouped.containsKey(name)) {
+          grouped[name]!['qty'] = (grouped[name]!['qty'] as int) + qty;
+          grouped[name]!['lineTotal'] = (grouped[name]!['lineTotal'] as double) + totalLine;
+        } else {
+          grouped[name] = {'qty': qty, 'price': price, 'lineTotal': totalLine};
+        }
+      }
+      for (final entry in grouped.entries) {
+        final name = entry.key;
+        final qty = entry.value['qty'] as int;
+        final totalLine = entry.value['lineTotal'] as double;
         final line = '${qty}x $name';
         final amt = '${totalLine.toStringAsFixed(2)} EUR';
         _addLeftRight(esc, line, amt, cols);
@@ -269,12 +370,20 @@ class ReceiptService {
   Future<void> printHospitalityReceipt(
     String id,
   ) async {
-    // Use cashier printer
-    final printerCfg = await _loadPrinter(type: 'cashier');
-    final ip = (printerCfg['ip'] as String).trim();
-    final port = (printerCfg['port'] as int);
-    final cols = (printerCfg['cols'] as int);
-    final mode = (printerCfg['mode'] as String);
+    // Prüfe zuerst ob Bluetooth-Drucker konfiguriert ist
+    final printerCfg = await _loadPrinter(type: 'bon');
+    
+    if (printerCfg['type'] == 'bluetooth') {
+      await _printHospitalityReceiptBluetooth(id, printerCfg);
+      return;
+    }
+    
+    // Fallback auf cashier printer
+    final cashierCfg = await _loadPrinter(type: 'cashier');
+    final ip = (cashierCfg['ip'] as String).trim();
+    final port = (cashierCfg['port'] as int);
+    final cols = (cashierCfg['cols'] as int);
+    final mode = (cashierCfg['mode'] as String);
     if (ip.isEmpty) {
       throw Exception('Kein Kassendrucker konfiguriert');
     }
@@ -503,4 +612,151 @@ class ReceiptService {
       await socket.close();
     }
   }
+
+  /// Druckt einen Verkaufsbeleg über Bluetooth
+  Future<void> _printSaleBluetooth(String id, Map<String, dynamic> printerCfg) async {
+    final btService = BluetoothPrinterService();
+    final address = printerCfg['address'] as String;
+    final cols = printerCfg['cols'] as int;
+
+    // Lade Verkaufsdaten
+    Map<String, dynamic>? s;
+    var saleDoc = await _db.collection('sales').doc(id).get();
+    if (saleDoc.exists) {
+      s = saleDoc.data();
+    } else {
+      final q = await _db
+          .collection('sales')
+          .where('ticketId', isEqualTo: id)
+          .orderBy('paidAt', descending: true)
+          .limit(1)
+          .get();
+      if (q.docs.isNotEmpty) {
+        s = q.docs.first.data();
+      }
+    }
+    if (s == null) throw Exception('Kein Verkaufsbeleg gefunden');
+    
+    final items = (s['items'] as List?) ?? const [];
+    final ticketId = (s['ticketId'] ?? '').toString();
+    final tableName = ((s['tableName'] ?? s['tableId']) ?? '').toString();
+    final paidAt = (s['paidAt'] as Timestamp?)?.toDate();
+    final ts = paidAt?.toString() ?? '';
+    final total = (s['total'] as num?)?.toDouble() ?? 0.0;
+    final payment = (s['paymentMethod'] ?? 'Bar').toString();
+
+    // Lade Bluetooth-Thermodrucker Vorlagen
+    final tpls = await _loadPlainTemplateSet('bluetooth');
+    
+    // Baue Bon-Text mit Vorlagen
+    final commands = <int>[];
+    
+    // Header
+    final header = _replaceVars(tpls['header']!, {
+      'ticketId': ticketId,
+      'tableName': tableName,
+      'date': ts,
+    }, cols);
+    commands.addAll(latin1.encode(header));
+    commands.addAll(latin1.encode('\n'));
+    
+    // Items - Group duplicates
+    final grouped = <String, Map<String, dynamic>>{};
+    for (final it in items) {
+      final name = (it['name'] ?? it['menuItemId']).toString();
+      final qty = (it['qty'] as num?)?.toInt() ?? 0;
+      final price = (it['price'] as num?)?.toDouble() ?? 0.0;
+      final totalLine = (it['lineTotal'] as num?)?.toDouble() ?? (price * qty);
+      if (grouped.containsKey(name)) {
+        grouped[name]!['qty'] = (grouped[name]!['qty'] as int) + qty;
+        grouped[name]!['lineTotal'] = (grouped[name]!['lineTotal'] as double) + totalLine;
+      } else {
+        grouped[name] = {'qty': qty, 'price': price, 'lineTotal': totalLine};
+      }
+    }
+    for (final entry in grouped.entries) {
+      final name = entry.key;
+      final qty = entry.value['qty'] as int;
+      final price = entry.value['price'] as double;
+      final totalLine = entry.value['lineTotal'] as double;
+      final line = tpls['item']!
+          .replaceAll('{qty}', qty.toString())
+          .replaceAll('{name}', name)
+          .replaceAll('{price}', price.toStringAsFixed(2))
+          .replaceAll('{lineTotal}', totalLine.toStringAsFixed(2));
+      final amt = '${totalLine.toStringAsFixed(2)}';
+      // Direkt encodieren statt createLeftRightText (weil Offset schon im Template ist)
+      commands.addAll(latin1.encode('$line $amt\n'));
+    }
+    
+    // Footer
+    final footer = _replaceVars(tpls['footer']!, {
+      'total': total.toStringAsFixed(2),
+      'payment': payment,
+    }, cols);
+    commands.addAll(latin1.encode(footer));
+    
+    // Papiervorschub
+    commands.addAll([10, 10, 10]);
+
+    // Verbinde und drucke
+    final device = await btService.connectToPrinter(address);
+    try {
+      await btService.printData(device, commands);
+    } finally {
+      await btService.disconnect(device);
+    }
+  }
+
+  Future<void> _printHospitalityReceiptBluetooth(String id, Map<String, dynamic> printerCfg) async {
+    final btService = BluetoothPrinterService();
+    final address = printerCfg['address'] as String;
+    final cols = (printerCfg['cols'] as int?) ?? 24;
+
+    // Load sale
+    Map<String, dynamic>? s;
+    var saleDoc = await _db.collection('sales').doc(id).get();
+    if (saleDoc.exists) {
+      s = saleDoc.data();
+    } else {
+      final q = await _db
+          .collection('sales')
+          .where('ticketId', isEqualTo: id)
+          .orderBy('paidAt', descending: true)
+          .limit(1)
+          .get();
+      if (q.docs.isNotEmpty) {
+        s = q.docs.first.data();
+      }
+    }
+    if (s == null) throw Exception('Kein Verkaufsbeleg gefunden');
+    
+    final total = (s['total'] as num?)?.toDouble() ?? 0.0;
+    final paidAt = (s['paidAt'] as Timestamp?)?.toDate();
+    final ts = paidAt?.toString() ?? DateTime.now().toString();
+
+    // Lade Bluetooth-Thermodrucker Vorlagen
+    final tpls = await _loadPlainTemplateSet('bluetooth');
+    
+    // Baue Bewirtungsbeleg-Text
+    final commands = <int>[];
+    
+    final body = _replaceVars(tpls['hospitality']!, {
+      'date': ts,
+      'total': total.toStringAsFixed(2),
+    }, cols);
+    commands.addAll(latin1.encode(body));
+    
+    // Papiervorschub
+    commands.addAll([10, 10, 10]);
+
+    // Verbinde und drucke
+    final device = await btService.connectToPrinter(address);
+    try {
+      await btService.printData(device, commands);
+    } finally {
+      await btService.disconnect(device);
+    }
+  }
 }
+

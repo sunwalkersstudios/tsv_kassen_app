@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../state/tables_provider.dart';
 import '../state/auth_provider.dart';
+// tickets_repo is already imported above
+import '../state/settings_provider.dart';
 import '../repo/tickets_repo.dart';
 
 class TablePlanScreen extends StatelessWidget {
@@ -12,14 +14,25 @@ class TablePlanScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final tables = context.watch<TablesProvider>();
     final auth = context.watch<AuthProvider>();
+    final merged = context.watch<SettingsProvider>().mergeKitchenBar;
+    final ticketsRepo = TicketsRepo();
     return Scaffold(
       appBar: AppBar(title: const Text('Tischplan')),
       body: auth.user == null
           ? const Center(child: Text('Bitte anmelden'))
-          : StreamBuilder<Map<String, Map<String, bool>>>(
-              stream: TicketsRepo().streamRouteFlagsAll(),
+          : StreamBuilder<Map<String, double>>(
+              stream: ticketsRepo.streamOpenAmountsByTable(),
+              builder: (context, openAmountsSnap) {
+                final openAmounts = openAmountsSnap.data ?? const <String, double>{};
+                return StreamBuilder<Map<String, Map<String, bool>>>(
+              stream: ticketsRepo.streamRouteFlagsAll(),
               builder: (context, snap) {
                 final flags = snap.data ?? const <String, Map<String, bool>>{};
+                // Secondary stream for per-item ready indicators
+                return StreamBuilder<Map<String, Map<String, List<Map<String, dynamic>>>>>(
+                  stream: ticketsRepo.streamReadyItemsByTable(),
+                  builder: (context, readySnap) {
+                    final readyByTable = readySnap.data ?? const {};
                 if (tables.tables.isEmpty) {
                   return Center(
                     child: Padding(
@@ -60,6 +73,9 @@ class TablePlanScreen extends StatelessWidget {
                     final isBillable = f['billable'] == true;
                     final kitchenReady = f['kitchen'] == true;
                     final barReady = f['bar'] == true;
+                    final List<Map<String, dynamic>> readyKitchen = (readyByTable[t.id]?['kitchen'] ?? const []);
+                    final List<Map<String, dynamic>> readyBar = (readyByTable[t.id]?['bar'] ?? const []);
+                    final openAmount = openAmounts[t.id] ?? 0.0;
                     return Material(
                       elevation: 3,
                       borderRadius: BorderRadius.circular(16),
@@ -95,6 +111,18 @@ class TablePlanScreen extends StatelessWidget {
                                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.9),
                                       ),
                                     ),
+                                    if (openAmount > 0)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          '€${openAmount.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(context).colorScheme.primary,
+                                          ),
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -114,8 +142,27 @@ class TablePlanScreen extends StatelessWidget {
                                       ),
                                     if (barReady)
                                       Chip(
-                                        label: const Text('Getränke'),
-                                        backgroundColor: Colors.blue.shade200,
+                                        label: Text(merged ? 'Getränke (auto)' : 'Getränke'),
+                                        backgroundColor: merged ? Colors.teal.shade300 : Colors.blue.shade200,
+                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      ),
+                                    // Per-item ready indicators
+                                    if (readyKitchen.isNotEmpty)
+                                      Chip(
+                                        label: Text(readyKitchen.length == 1
+                                            ? '${readyKitchen.first['name'] ?? 'Speise'} fertig'
+                                            : '${readyKitchen.length} Speisen fertig'),
+                                        backgroundColor: Colors.orange.shade100,
+                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      ),
+                                    if (readyBar.isNotEmpty)
+                                      Chip(
+                                        label: Text(readyBar.length == 1
+                                            ? '${readyBar.first['name'] ?? 'Getränk'} fertig'
+                                            : '${readyBar.length} Getränke fertig'),
+                                        backgroundColor: Colors.blue.shade100,
                                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                         padding: const EdgeInsets.symmetric(horizontal: 6),
                                       ),
@@ -136,6 +183,10 @@ class TablePlanScreen extends StatelessWidget {
                     );
                   },
                 );
+                  },
+                );
+              },
+            );
               },
             ),
     );

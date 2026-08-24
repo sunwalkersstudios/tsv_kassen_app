@@ -124,6 +124,63 @@ exports.notifyOnTicketReady = notifyOnTicketReady;
 // Also export a backward-compatible alias (if an old name existed)
 exports.onTicketReadyNotifyServer = notifyOnTicketReady;
 
+// Trigger: when a ticket item transitions to 'ready', notify the waiter with item name
+const notifyOnItemReady = functions
+  .runWith({ memory: '256MB', timeoutSeconds: 60, maxInstances: 10 })
+  .region('europe-west3')
+  .firestore
+  .document('tickets/{ticketId}/items/{itemId}')
+  .onUpdate(async (change, context) => {
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    const beforeStatus = (before.status || 'open');
+    const afterStatus = (after.status || 'open');
+    if (beforeStatus === 'ready' || afterStatus !== 'ready') {
+      return null; // only act on first transition to ready
+    }
+
+    try {
+      const ticketId = context.params.ticketId;
+      const tDoc = await db.collection('tickets').doc(ticketId).get();
+      if (!tDoc.exists) return null;
+      const t = tDoc.data() || {};
+      const serverId = t.serverId;
+      const tableId = t.tableId;
+      const [tokens, tableName] = await Promise.all([
+        getUserDeviceTokens(serverId),
+        getTableName(tableId),
+      ]);
+      if (!tokens.length) return null;
+
+      const name = (after.name || '').toString() || 'Artikel';
+      const qty = parseInt(after.qty || 1, 10) || 1;
+      const title = `${name} fertig`;
+      const body = `${qty > 1 ? qty + '× ' : ''}${name} für ${tableName}`;
+
+      const payload = {
+        notification: { title, body },
+        android: {
+          priority: 'high',
+          notification: { channelId: 'ready_channel', priority: 'PRIORITY_HIGH' },
+        },
+        data: {
+          type: 'item_ready',
+          tableId: String(tableId || ''),
+          ticketId,
+          itemId: context.params.itemId,
+          name: String(name),
+        },
+      };
+      const response = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
+      console.log('[notifyOnItemReady] Sent', { ticketId, itemId: context.params.itemId, success: response.successCount, fail: response.failureCount });
+    } catch (err) {
+      console.error('[notifyOnItemReady] Error', { error: String(err), ticketId: context.params.ticketId, itemId: context.params.itemId });
+    }
+    return null;
+  });
+
+exports.notifyOnItemReady = notifyOnItemReady;
+
 // Scheduled daily Firestore export to GCS (requires Google Cloud project & permissions)
 // Set env var EXPORT_BUCKET (e.g., gs://my-backup-bucket) and optionally EXPORT_PREFIX
 const {google} = require('googleapis');

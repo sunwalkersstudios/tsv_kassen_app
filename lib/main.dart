@@ -15,6 +15,7 @@ import 'state/menu_provider.dart';
 import 'state/tables_provider.dart';
 import 'state/tickets_provider.dart';
 import 'state/events_provider.dart';
+import 'state/settings_provider.dart';
 import 'util/notifications_service.dart';
 
 @pragma('vm:entry-point')
@@ -41,62 +42,64 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
 // Firebase background handler placeholder (will be added when enabling Firebase)
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  // Enable immersive fullscreen on Android (hide system bars, reveal on swipe)
-  try {
-    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android)) {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    }
-  } catch (_) {}
-  // Initialize Firebase (Android resolves options from google-services.json)
-  try {
-    await Firebase.initializeApp();
-  } catch (_) {}
+  // Wrap everything in runZonedGuarded from the start
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Enable immersive fullscreen on Android (hide system bars, reveal on swipe)
+    try {
+      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android)) {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    } catch (_) {}
+    // Initialize Firebase (Android resolves options from google-services.json)
+    try {
+      await Firebase.initializeApp();
+    } catch (_) {}
 
-  // Enable Crashlytics & Performance collection in foreground (no-ops on web)
-  try {
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-  } catch (_) {}
-  try {
-    await FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
-  } catch (_) {}
+    // Enable Crashlytics & Performance collection in foreground (no-ops on web)
+    try {
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+    } catch (_) {}
+    try {
+      await FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
+    } catch (_) {}
 
-  // Report uncaught Flutter framework errors
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.dumpErrorToConsole(details);
-    // Use fatal for framework-level errors
-    FirebaseCrashlytics.instance.recordFlutterFatalError(details);
-  };
+    // Report uncaught Flutter framework errors
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.dumpErrorToConsole(details);
+      // Use fatal for framework-level errors
+      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+    };
 
-  // Report uncaught async/dart errors
-  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-    // Mark fatal to ensure visibility in Crashlytics
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-    return true; // handled
-  };
+    // Report uncaught async/dart errors
+    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+      // Mark fatal to ensure visibility in Crashlytics
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true; // handled
+    };
 
-  // Prepare local notifications
-  final notifications = NotificationsService();
-  await notifications.initialize();
+    // Prepare local notifications
+    final notifications = NotificationsService();
+    await notifications.initialize();
 
-  // Configure Firebase Messaging
-  try {
-    FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
-    await FirebaseMessaging.instance.setAutoInitEnabled(true);
-    await FirebaseMessaging.instance.requestPermission();
+    // Configure Firebase Messaging
+    try {
+      FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
+      await FirebaseMessaging.instance.setAutoInitEnabled(true);
+      await FirebaseMessaging.instance.requestPermission();
 
-    // Fetch and log the current FCM token (useful for testing)
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) {
-      // ignore: avoid_print
-      print('FCM token: $token');
-    }
+      // Fetch and log the current FCM token (useful for testing)
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        // ignore: avoid_print
+        print('FCM token: $token');
+      }
 
-    // Listen for token refresh
-    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      // ignore: avoid_print
-      print('FCM token refreshed: $newToken');
-    });
+      // Listen for token refresh
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        // ignore: avoid_print
+        print('FCM token refreshed: $newToken');
+      });
 
     // Foreground messages -> show local notification
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
@@ -123,12 +126,11 @@ Future<void> main() async {
     // Messaging not available; continue without push
   }
 
-  // Wrap runApp to catch any zone errors
-  runZonedGuarded(() {
     runApp(
       MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => SettingsProvider()),
           ChangeNotifierProvider(create: (_) => EventsProvider()..start()),
           ChangeNotifierProvider(create: (_) => TablesProvider()),
           ChangeNotifierProvider(create: (_) => MenuProvider()..seedDefaults()),

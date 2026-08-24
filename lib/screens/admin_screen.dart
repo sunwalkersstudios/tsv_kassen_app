@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../repo/tickets_repo.dart';
-import '../util/receipt_service.dart';
+import '../util/bluetooth_printer_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class AdminScreen extends StatelessWidget {
   const AdminScreen({super.key});
@@ -13,83 +12,186 @@ class AdminScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Admin')),
       body: ListView(
         children: [
-          ListTile(
-            title: const Text('Bondrucker (Kellner) einstellen'),
-            subtitle: const Text('IP/Port für Beleg-Druck (Kellner/Kassieren) festlegen'),
-            trailing: const Icon(Icons.print),
-            onTap: () async {
-              final ipCtrl = TextEditingController();
-              final portCtrl = TextEditingController(text: '9100');
-              int cols = 32; // 58mm default
-              String mode = 'escpos';
-              // preload existing
-              final svc = ReceiptService();
-              final sp = await SharedPreferences.getInstance();
-              ipCtrl.text = sp.getString('bon_printer_ip') ?? sp.getString('printer_ip') ?? '';
-              portCtrl.text = (sp.getInt('bon_printer_port') ?? sp.getInt('printer_port') ?? 9100).toString();
-              cols = sp.getInt('bon_printer_cols') ?? 32;
-              mode = sp.getString('bon_printer_mode') ?? 'escpos';
-              if (!context.mounted) return;
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => StatefulBuilder(
-                  builder: (ctx, setStateDlg) => AlertDialog(
-                    title: const Text('Bondrucker einstellen'),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(controller: ipCtrl, decoration: const InputDecoration(labelText: 'IP-Adresse')),
-                        TextField(controller: portCtrl, decoration: const InputDecoration(labelText: 'Port'), keyboardType: TextInputType.number),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Text('Papierbreite:'),
-                            const SizedBox(width: 12),
-                            DropdownButton<int>(
-                              value: cols,
-                              items: const [
-                                DropdownMenuItem(value: 32, child: Text('58mm (≈32 Zeichen)')),
-                                DropdownMenuItem(value: 48, child: Text('80mm (≈48 Zeichen)')),
-                              ],
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setStateDlg(() => cols = v);
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Text('Modus:'),
-                            const SizedBox(width: 12),
-                            DropdownButton<String>(
-                              value: mode,
-                              items: const [
-                                DropdownMenuItem(value: 'escpos', child: Text('ESC/POS (Thermodrucker)')),
-                                DropdownMenuItem(value: 'plain', child: Text('Plain Text')),
-                              ],
-                              onChanged: (v) { if (v != null) setStateDlg(() => mode = v); },
-                            ),
-                          ],
-                        ),
-                      ],
+          FutureBuilder<Map<String, String>?>(
+            future: BluetoothPrinterService().loadSavedPrinter(),
+            builder: (context, snapshot) {
+              final isConfigured = snapshot.data != null;
+              return ListTile(
+                title: const Text('Bluetooth-Drucker (GOOJPRT PT-310) einstellen'),
+                subtitle: Text(
+                  isConfigured 
+                    ? 'Verbunden: ${snapshot.data!['name']}'
+                    : 'Bluetooth-Thermodrucker für Bons konfigurieren'
+                ),
+                leading: Icon(
+                  Icons.bluetooth,
+                  color: isConfigured ? Colors.blue : null,
+                ),
+                trailing: isConfigured 
+                  ? const Icon(Icons.check_circle, color: Colors.green)
+                  : const Icon(Icons.bluetooth_disabled),
+                onTap: () async {
+              final btService = BluetoothPrinterService();
+              
+              // Fordere alle benötigten Berechtigungen an
+              Map<Permission, PermissionStatus> statuses = await [
+                Permission.bluetoothScan,
+                Permission.bluetoothConnect,
+              ].request();
+              
+              // Prüfe ob alle Berechtigungen erteilt wurden
+              bool allGranted = statuses.values.every((status) => status.isGranted);
+              bool anyPermanentlyDenied = statuses.values.any((status) => status.isPermanentlyDenied);
+              
+              if (anyPermanentlyDenied) {
+                if (!context.mounted) return;
+                final openSettings = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Berechtigungen erforderlich'),
+                    content: const Text(
+                      'Bitte erlaube Bluetooth-Berechtigungen in den Einstellungen.'
                     ),
                     actions: [
-                      TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
-                      ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Speichern')),
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Abbrechen'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: const Text('Einstellungen'),
+                      ),
+                    ],
+                  ),
+                );
+                if (openSettings == true) {
+                  await openAppSettings();
+                }
+                return;
+              }
+              
+              if (!allGranted) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Bluetooth-Berechtigungen benötigt'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+                return;
+              }
+
+              if (!context.mounted) return;
+              
+              // Zeige Scan-Dialog
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => const AlertDialog(
+                  title: Text('Suche Bluetooth-Geräte...'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Bitte warten...'),
                     ],
                   ),
                 ),
               );
-              if (ok == true) {
-                final ip = ipCtrl.text.trim();
-                final port = int.tryParse(portCtrl.text.trim()) ?? 9100;
-                await svc.savePrinter(ip: ip, port: port, type: 'bon', cols: cols, mode: mode);
+
+              try {
+                final devices = await btService.scanForDevices(timeout: const Duration(seconds: 8));
+                
+                // Schließe Scan-Dialog erst nachdem wir mounted geprüft haben
+                if (context.mounted) {
+                  Navigator.of(context, rootNavigator: true).pop(); // Schließe Scan-Dialog
+                }
+                
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bondrucker gespeichert')));
+                
+                if (devices.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Keine Bluetooth-Geräte gefunden')),
+                  );
+                  return;
+                }
+
+                // Warte kurz bevor nächster Dialog geöffnet wird
+                await Future.delayed(const Duration(milliseconds: 300));
+                
+                if (!context.mounted) return;
+
+                // Zeige Liste der gefundenen Geräte
+                final selectedDevice = await showDialog<String>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Bluetooth-Drucker wählen'),
+                    content: SizedBox(
+                      width: double.maxFinite,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Gefundene Geräte:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          Flexible(
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: devices.length,
+                              itemBuilder: (context, index) {
+                                final device = devices[index].device;
+                                final name = device.platformName.isNotEmpty 
+                                    ? device.platformName 
+                                    : 'Unbekannt';
+                                return Card(
+                                  child: ListTile(
+                                    leading: const Icon(Icons.bluetooth),
+                                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    subtitle: Text(device.remoteId.str),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: () => Navigator.of(ctx).pop('${device.remoteId.str}|||$name'),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Abbrechen'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (selectedDevice != null) {
+                  final parts = selectedDevice.split('|||');
+                  final address = parts[0];
+                  final name = parts[1];
+                  
+                  await btService.savePrinter(address, name);
+                  
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Bluetooth-Drucker gespeichert: $name')),
+                  );
+                }
+              } catch (e) {
+                // Schließe Scan-Dialog im Fehlerfall
+                if (context.mounted) {
+                  Navigator.of(context, rootNavigator: true).pop();
+                }
+                
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Fehler: $e')),
+                );
               }
+            },
+              );
             },
           ),
           Padding(
@@ -97,118 +199,73 @@ class AdminScreen extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
-                icon: const Icon(Icons.print),
-                label: const Text('Bondrucker Testdruck'),
+                icon: const Icon(Icons.bluetooth),
+                label: const Text('Bluetooth-Drucker Testdruck'),
                 onPressed: () async {
                   try {
-                    await ReceiptService().printTest(type: 'bon');
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Testdruck gesendet')));
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Testdruck fehlgeschlagen: $e')));
-                    }
-                  }
-                },
-              ),
-            ),
-          ),
-          ListTile(
-            title: const Text('Kassendrucker einstellen'),
-            subtitle: const Text('IP/Port für Kassen-Druck (z. B. Tagesabschluss) festlegen'),
-            trailing: const Icon(Icons.print_outlined),
-            onTap: () async {
-              final ipCtrl = TextEditingController();
-              final portCtrl = TextEditingController(text: '9100');
-              final svc = ReceiptService();
-              final sp = await SharedPreferences.getInstance();
-              ipCtrl.text = sp.getString('cash_printer_ip') ?? '';
-              portCtrl.text = (sp.getInt('cash_printer_port') ?? 9100).toString();
-              int cols = sp.getInt('cash_printer_cols') ?? 48;
-              String mode = sp.getString('cash_printer_mode') ?? 'plain';
-              if (!context.mounted) return;
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => StatefulBuilder(
-                  builder: (ctx, setStateDlg) => AlertDialog(
-                    title: const Text('Kassendrucker einstellen'),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(controller: ipCtrl, decoration: const InputDecoration(labelText: 'IP-Adresse')),
-                        TextField(controller: portCtrl, decoration: const InputDecoration(labelText: 'Port'), keyboardType: TextInputType.number),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Text('Papierbreite:'),
-                            const SizedBox(width: 12),
-                            DropdownButton<int>(
-                              value: cols,
-                              items: const [
-                                DropdownMenuItem(value: 32, child: Text('58mm (≈32 Zeichen)')),
-                                DropdownMenuItem(value: 48, child: Text('80mm (≈48 Zeichen)')),
-                              ],
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setStateDlg(() => cols = v);
-                                }
-                              },
+                    // Fordere Berechtigungen an
+                    final status = await Permission.bluetoothConnect.request();
+                    
+                    if (status.isPermanentlyDenied) {
+                      if (!context.mounted) return;
+                      final openSettings = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Berechtigung erforderlich'),
+                          content: const Text('Bitte erlaube Bluetooth in den Einstellungen.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text('Abbrechen'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text('Einstellungen'),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Text('Modus:'),
-                            const SizedBox(width: 12),
-                            DropdownButton<String>(
-                              value: mode,
-                              items: const [
-                                DropdownMenuItem(value: 'plain', child: Text('Plain Text (A4)')),
-                                DropdownMenuItem(value: 'escpos', child: Text('ESC/POS')),
-                              ],
-                              onChanged: (v) { if (v != null) setStateDlg(() => mode = v); },
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
-                      ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Speichern')),
-                    ],
-                  ),
-                ),
-              );
-              if (ok == true) {
-                final ip = ipCtrl.text.trim();
-                final port = int.tryParse(portCtrl.text.trim()) ?? 9100;
-                await svc.savePrinter(ip: ip, port: port, type: 'cashier', cols: cols, mode: mode);
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kassendrucker gespeichert')));
-              }
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.print_outlined),
-                label: const Text('Kassendrucker Testdruck'),
-                onPressed: () async {
-                  try {
-                    await ReceiptService().printTest(type: 'cashier');
+                      );
+                      if (openSettings == true) {
+                        await openAppSettings();
+                      }
+                      return;
+                    }
+                    
+                    if (!status.isGranted) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Bluetooth-Berechtigung benötigt')),
+                        );
+                      }
+                      return;
+                    }
+
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Testdruck gesendet')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Verbinde mit Drucker...')),
+                      );
+                    }
+                    
+                    await BluetoothPrinterService().printTest();
+                    
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✓ Verbindung erfolgreich - Testdruck gesendet'),
+                          backgroundColor: Colors.green,
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
                     }
                   } catch (e) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Testdruck fehlgeschlagen: $e')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Fehler: $e')),
+                      );
                     }
                   }
                 },
+
               ),
             ),
           ),
@@ -221,29 +278,19 @@ class AdminScreen extends StatelessWidget {
           ),
           const Divider(),
           ListTile(
+            title: const Text('Einstellungen'),
+            subtitle: const Text('Bar und Küche zusammenlegen, weitere Optionen'),
+            trailing: const Icon(Icons.settings),
+            onTap: () => context.push('/admin/settings'),
+          ),
+          const Divider(),
+          ListTile(
             title: const Text('Kasse / Tagesübersicht'),
-            subtitle: const Text('Tagesumsatz, Barbestand, Artikelübersicht, Bondrucker'),
+            subtitle: const Text('Tagesumsatz, Barbestand, Artikelübersicht'),
             trailing: const Icon(Icons.point_of_sale),
             onTap: () => context.push('/cashier'),
           ),
           const Divider(),
-          ListTile(
-            title: const Text('Demo-Basisartikel hinzufügen'),
-            subtitle: const Text('Fügt Cola und Schnitzel als Basis-Artikel hinzu'),
-            trailing: const Icon(Icons.download_for_offline),
-            onTap: () async {
-              // lazy import to keep file lightweight
-              // ignore: avoid_dynamic_calls
-              try {
-                // We import here to avoid adding repo import at top if not needed elsewhere
-                // ignore: unused_local_variable
-                final repo = (await Future.value(() => null)) as dynamic;
-              } catch (_) {}
-              // Inline call using deferred import is not straightforward here; just duplicate minimal logic via Navigator push
-              // Navigate to /admin/menu where the AppBar action can fill demo data
-              if (context.mounted) context.push('/admin/menu');
-            },
-          ),
           ListTile(
             title: const Text('Veranstaltungen verwalten'),
             subtitle: const Text('Anlegen, aktivieren, Zeitraum festlegen'),
@@ -257,59 +304,10 @@ class AdminScreen extends StatelessWidget {
             onTap: () => context.push('/admin/tables'),
           ),
           ListTile(
-            title: const Text('Speisen & Getränke (Basis)'),
-            subtitle: const Text('Standardmenü pflegen'),
+            title: const Text('Speisen & Getränke'),
+            subtitle: const Text('Menü und Artikel pflegen'),
             trailing: const Icon(Icons.restaurant_menu),
             onTap: () => context.push('/admin/menu'),
-          ),
-          ListTile(
-            title: const Text('Event-spezifische Speisen & Getränke'),
-            subtitle: const Text('Zusätzliche Artikel je Event mit Preisen'),
-            trailing: const Icon(Icons.local_offer),
-            onTap: () => context.push('/admin/menu'),
-          ),
-          const Divider(),
-          ListTile(
-            title: const Text('Alle Tickets löschen (Demo-Cleanup)'),
-            subtitle: const Text('Entfernt sämtliche Tickets inkl. Positionen'),
-            trailing: const Icon(Icons.delete_forever, color: Colors.red),
-            onTap: () async {
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Alle Tickets löschen?'),
-                  content: const Text('Dies entfernt sämtliche Tickets und Positionen. Nicht rückgängig zu machen.'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
-                    ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Löschen')),
-                  ],
-                ),
-              );
-              if (ok == true && context.mounted) {
-                // show progress
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (ctx) => const Center(child: CircularProgressIndicator()),
-                );
-                try {
-                  await TicketsRepo().deleteAllTickets(includePaid: true);
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Alle Tickets gelöscht')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Fehler beim Löschen: $e')),
-                    );
-                  }
-                }
-              }
-            },
           ),
         ],
       ),
