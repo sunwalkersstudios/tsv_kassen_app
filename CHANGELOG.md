@@ -17,6 +17,40 @@
 - Mehrtagesansichten zeigen zusaetzlich eine Aufschluesselung nach Tagen;
   ein Tippen darauf springt in den Einzeltag.
 
+### Zugang und Rollen
+
+- **Die fehlenden Admin-Functions gibt es jetzt.** `adminListUsers`,
+  `adminCreateUser`, `adminSetRole`, `adminSetPassword` und `adminDisableUser`
+  wurden von der App seit jeher aufgerufen, existierten aber nie - die
+  Nutzerverwaltung lief ins Leere.
+- **Die Rolle liegt in den Custom Claims des Auth-Tokens**, nicht mehr in
+  `users/{uid}.role`. Ein Nutzer kann seine Claims nicht selbst schreiben; das
+  kann allein das Backend. Damit ist die Selbstbefoerderung zum Admin zu.
+- **Der Login legt keine Konten mehr an.** Die Notloesung "Konto anlegen und
+  Rolle aus dem E-Mail-Praefix raten" ist entfernt. Zugaenge vergibt der Admin.
+- **Verstaendliche Anmeldefehler** statt roher FirebaseAuthException; bei
+  falschen Zugangsdaten ohne Hinweis darauf, ob die Adresse existiert.
+- **PIN als Rueckfallebene zur Biometrie.** Ohne Fingerabdrucksensor entsperrte
+  sich der Sperrbildschirm bisher selbst. Die PIN gilt pro Geraet und wird nur
+  als gesalzener SHA-256-Wert abgelegt. Verwaltung unter Admin -> Einstellungen.
+
+### Firestore-Regeln
+
+- `role()` liest aus dem Token statt per `get()` aus `users/{uid}` - schliesst
+  die Selbstbefoerderung aus und spart einen Dokumentlesevorgang je Auswertung.
+- `users/{uid}`: eigene Aenderungen nur noch an Anzeigename und Push-Token;
+  Rolle und Sperrstatus setzt ausschliesslich das Backend.
+- Positionen bezahlter Tickets sind gesperrt - vorher war das Ticket
+  unveraenderlich, seine Positionen aber nicht.
+- `sales`: Einzelabruf fuer Kellner (zum Belegdruck), Auflisten nur fuer Admin.
+  Vorher konnte jede Aushilfe saemtliche Tagesumsaetze lesen.
+
+### Aufgeraeumt
+
+- `repo/org_repo.dart` und `models/organization.dart` entfernt - hingen am
+  bereits geloeschten Onboarding und enthielten einen weiteren Pfad, der Konten
+  anlegte.
+
 ### Geld
 
 - Neue Betraege werden als ganzzahlige Cent gefuehrt (`Money`, `CashDay`),

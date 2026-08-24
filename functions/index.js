@@ -212,3 +212,9 @@ exports.scheduledFirestoreExport = functions
     }
     return null;
   });
+
+// ---------------------------------------------------------------------------
+// Nutzerverwaltung (adminListUsers, adminCreateUser, adminSetRole,
+// adminSetPassword, adminDisableUser) - siehe admin_users.js
+// ---------------------------------------------------------------------------
+Object.assign(exports, require('./admin_users'));

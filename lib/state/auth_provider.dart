@@ -1,13 +1,24 @@
-import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:async';
-import '../models/entities.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/entities.dart';
 import '../repo/settings_repo.dart';
 import 'device_context.dart';
 
+/// Anmeldung und Rolle des angemeldeten Nutzers.
+///
+/// Die Rolle stammt aus den Custom Claims des Auth-Tokens. Frueher lag sie in
+/// `users/{uid}.role`, das der Nutzer selbst schreiben durfte - jeder konnte
+/// sich damit zum Admin machen. Claims setzt ausschliesslich das Backend
+/// (siehe functions/admin_users.js), die App liest sie nur.
+///
+/// Konten werden hier nicht mehr angelegt. Wer keins hat, bekommt eins vom
+/// Admin unter Admin -> Benutzer.
 class AuthProvider extends ChangeNotifier {
   FirebaseAuth? _auth;
   FirebaseFirestore? _db;
@@ -16,7 +27,8 @@ class AuthProvider extends ChangeNotifier {
   UserProfile? _user;
   UserProfile? get user => _user;
   bool get isAuthenticated => _user != null;
-  bool _locked = false; // when true, user exists but app is locked pending biometric
+
+  bool _locked = false; // Sitzung vorhanden, aber Entsperren steht aus
   bool get isLocked => _locked;
 
   AuthProvider({bool skipInit = false}) {
@@ -30,13 +42,9 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _init() async {
     final current = _auth?.currentUser;
     if (current != null) {
-      await _loadOrCreateUserDoc(current);
-      _locked = true; // require unlock on app start if a session exists
-      // Start listening for token refresh
-      _tokenSub?.cancel();
-      _tokenSub = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-        saveFcmToken(newToken);
-      });
+      await _loadProfile(current);
+      _locked = true;
+      _listenForTokenRefresh();
       notifyListeners();
     }
   }
@@ -48,34 +56,52 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Meldet an. Wirft bei unbekannter Adresse oder falschem Passwort eine
+  /// [AuthFailure] mit einer Meldung, die man einer Aushilfe zeigen kann.
   Future<void> login({required String email, required String password}) async {
     try {
-      // Try sign-in
       final cred = await _auth!.signInWithEmailAndPassword(email: email, password: password);
-      await _loadOrCreateUserDoc(cred.user!);
+      await _loadProfile(cred.user!);
     } on FirebaseAuthException catch (e) {
-      // Auto create on first login for prototype convenience
-      if (e.code == 'user-not-found') {
-        final cred = await _auth!.createUserWithEmailAndPassword(email: email, password: password);
-        await _seedUserDoc(cred.user!);
-      } else if (e.code == 'operation-not-allowed' ||
-          e.code == 'unknown' && (e.message?.toLowerCase().contains('configuration_not_found') ?? false)) {
-        throw Exception('E-Mail/Passwort in Firebase aktivieren: Firebase Console → Build → Authentication → „Get started“ → Anmeldemethode → „E-Mail/Passwort“ aktivieren.');
-      } else {
-        rethrow;
-      }
+      throw AuthFailure(_messageFor(e), code: e.code);
     }
-    // Remember last email
+
     try {
       final sp = await SharedPreferences.getInstance();
       await sp.setString('lastEmail', email);
     } catch (_) {}
-    // Ensure FCM token refresh is saved for this user
-    _tokenSub?.cancel();
-    _tokenSub = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      saveFcmToken(newToken);
-    });
+
+    _listenForTokenRefresh();
     notifyListeners();
+  }
+
+  /// Uebersetzt die Firebase-Fehlercodes in verstaendliches Deutsch.
+  /// Bei falschen Zugangsdaten bewusst ohne Hinweis darauf, ob die Adresse
+  /// existiert - sonst liesse sich damit herausfinden, wer ein Konto hat.
+  String _messageFor(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-credential':
+      case 'wrong-password':
+      case 'user-not-found':
+        return 'E-Mail oder Passwort stimmt nicht.';
+      case 'invalid-email':
+        return 'Die E-Mail-Adresse sieht nicht richtig aus.';
+      case 'user-disabled':
+        return 'Dieses Konto ist gesperrt. Bitte beim Admin melden.';
+      case 'too-many-requests':
+        return 'Zu viele Versuche. Bitte einen Moment warten und erneut probieren.';
+      case 'network-request-failed':
+        return 'Keine Verbindung. Bitte WLAN prüfen.';
+      case 'operation-not-allowed':
+        return 'Anmeldung per E-Mail ist im Firebase-Projekt nicht aktiviert.';
+      default:
+        return 'Anmeldung fehlgeschlagen (${e.code}).';
+    }
+  }
+
+  void _listenForTokenRefresh() {
+    _tokenSub?.cancel();
+    _tokenSub = FirebaseMessaging.instance.onTokenRefresh.listen(saveFcmToken);
   }
 
   Future<void> saveFcmToken(String token) async {
@@ -86,15 +112,18 @@ class AuthProvider extends ChangeNotifier {
         'lastToken': token,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-    } catch (_) {/* ignore */}
+    } catch (_) {/* Push ist nicht kritisch */}
   }
 
   void logout() {
-    try { _auth?.signOut(); } catch (_) {}
+    try {
+      _auth?.signOut();
+    } catch (_) {}
     _user = null;
     _locked = false;
     _tokenSub?.cancel();
     _tokenSub = null;
+    DeviceContext.clear();
     notifyListeners();
   }
 
@@ -105,76 +134,75 @@ class AuthProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> _seedUserDoc(User firebaseUser) async {
-    // Heuristic: derive initial role from email prefix to keep flows easy
-    final email = firebaseUser.email ?? firebaseUser.uid;
-    UserRole role = UserRole.server;
-    if (email.startsWith('kueche')) role = UserRole.kitchen;
-    if (email.startsWith('bar')) role = UserRole.bar;
-    if (email.startsWith('admin')) role = UserRole.admin;
-    final doc = _db!.collection('users').doc(firebaseUser.uid);
-    await doc.set({
-      'uid': firebaseUser.uid,
-      'email': firebaseUser.email,
-      'displayName': firebaseUser.displayName ?? email.split('@').first,
-      'role': role.name,
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    _user = UserProfile(uid: firebaseUser.uid, displayName: email.split('@').first, role: role);
+  // ------------------------------------------------------------------ Profil
+
+  Future<void> _loadProfile(User firebaseUser) async {
+    final role = await _roleFromClaims(firebaseUser);
+
+    // Anzeigename und Organisation kommen weiter aus Firestore - das sind
+    // reine Anzeigedaten ohne Rechtewirkung.
+    String displayName =
+        firebaseUser.displayName ?? firebaseUser.email?.split('@').first ?? firebaseUser.uid;
+    String? orgId;
+    try {
+      final doc = await _db!.collection('users').doc(firebaseUser.uid).get();
+      final data = doc.data();
+      if (data != null) {
+        final n = (data['displayName'] as String?)?.trim();
+        if (n != null && n.isNotEmpty) displayName = n;
+        orgId = (data['orgId'] as String?)?.trim();
+      }
+    } catch (_) {/* Anzeigename ist entbehrlich */}
+
+    var effective = role;
+    // Sind Kueche und Bar zusammengelegt, wird die Bar-Rolle fuer die
+    // Navigation wie Kueche behandelt. Die echte Rolle bleibt unberuehrt.
+    try {
+      if (role == UserRole.bar && await SettingsRepo().getMergeKitchenBar()) {
+        effective = UserRole.kitchen;
+      }
+    } catch (_) {}
+
+    _user = UserProfile(uid: firebaseUser.uid, displayName: displayName, role: effective);
+
+    if (orgId != null && orgId.isNotEmpty) {
+      await _applyOrgContext(orgId);
+    }
   }
 
-  Future<void> _loadOrCreateUserDoc(User firebaseUser) async {
-    final doc = await _db!.collection('users').doc(firebaseUser.uid).get();
-    if (!doc.exists) {
-      await _seedUserDoc(firebaseUser);
-      return;
-    }
-    final data = doc.data() ?? {};
-    String? roleStr = data['role'] as String?;
-    String displayName = (data['displayName'] as String?) ?? firebaseUser.email?.split('@').first ?? firebaseUser.uid;
-    final String? orgId = (data['orgId'] as String?)?.trim();
-
-    // If role missing, derive from email prefix and write back
-    if (roleStr == null || roleStr.isEmpty) {
-      final email = firebaseUser.email ?? firebaseUser.uid;
-      final derived = _roleFromString(_deriveRoleFromEmail(email).name);
-      roleStr = derived.name;
-      await _db!.collection('users').doc(firebaseUser.uid).set({
-        'role': roleStr,
-        'displayName': displayName,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
-
-    var role = _roleFromString(roleStr);
-    // If kitchen/bar merged, map bar role to kitchen for navigation
+  /// Liest die Rolle aus dem Auth-Token.
+  ///
+  /// `getIdTokenResult(true)` erzwingt eine Aktualisierung, damit eine gerade
+  /// vom Admin geaenderte Rolle sofort greift und nicht bis zu einer Stunde
+  /// im alten Token haengt.
+  Future<UserRole> _roleFromClaims(User firebaseUser) async {
     try {
-      final merged = await SettingsRepo().getMergeKitchenBar();
-      if (merged && role == UserRole.bar) {
-        role = UserRole.kitchen;
-      }
-    } catch (_) {/* ignore */}
-    _user = UserProfile(uid: firebaseUser.uid, displayName: displayName, role: role);
-
-    // Populate per-device org context for single-tenant settings/templates
-    if (orgId != null && orgId.isNotEmpty) {
-      DeviceContext.deviceOrgId = orgId;
-      try {
-        final orgSnap = await _db!.collection('orgs').doc(orgId).get();
-        final orgName = (orgSnap.data()?['name'] as String?)?.trim();
-        if (orgName != null && orgName.isNotEmpty) {
-          DeviceContext.deviceOrgName = orgName;
-        }
-      } catch (_) {/* ignore name fetch errors */}
-      // Best-effort cache for convenience
-      try {
-        final sp = await SharedPreferences.getInstance();
-        await sp.setString('deviceOrgId', orgId);
-        if (DeviceContext.deviceOrgName != null) {
-          await sp.setString('deviceOrgName', DeviceContext.deviceOrgName!);
-        }
-      } catch (_) {/* ignore */}
+      final token = await firebaseUser.getIdTokenResult(true);
+      final claim = token.claims?['role'];
+      if (claim is String && claim.isNotEmpty) return _roleFromString(claim);
+    } catch (e) {
+      debugPrint('[AuthProvider] Rolle konnte nicht aus dem Token gelesen werden: $e');
     }
+    // Ohne Claim gilt die geringste Berechtigung. Ein Konto ohne gesetzte
+    // Rolle soll nicht versehentlich mehr duerfen als noetig.
+    return UserRole.server;
+  }
+
+  Future<void> _applyOrgContext(String orgId) async {
+    DeviceContext.deviceOrgId = orgId;
+    try {
+      final orgSnap = await _db!.collection('orgs').doc(orgId).get();
+      final orgName = (orgSnap.data()?['name'] as String?)?.trim();
+      if (orgName != null && orgName.isNotEmpty) {
+        DeviceContext.deviceOrgName = orgName;
+      }
+    } catch (_) {}
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString('deviceOrgId', orgId);
+      final name = DeviceContext.deviceOrgName;
+      if (name != null) await sp.setString('deviceOrgName', name);
+    } catch (_) {}
   }
 
   UserRole _roleFromString(String s) {
@@ -189,12 +217,14 @@ class AuthProvider extends ChangeNotifier {
         return UserRole.server;
     }
   }
+}
 
-  UserRole _deriveRoleFromEmail(String email) {
-    if (email.startsWith('kueche')) return UserRole.kitchen;
-    if (email.startsWith('bar')) return UserRole.bar;
-    if (email.startsWith('admin')) return UserRole.admin;
-    return UserRole.server;
-  }
+/// Anmeldefehler mit einer Meldung, die direkt angezeigt werden kann.
+class AuthFailure implements Exception {
+  final String message;
+  final String? code;
+  const AuthFailure(this.message, {this.code});
 
+  @override
+  String toString() => message;
 }

@@ -1,14 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:tsv/models/cash_day.dart';
 import 'package:tsv/models/report_period.dart';
 import 'package:tsv/models/sales_summary.dart';
+import 'package:tsv/util/app_lock.dart';
 import 'package:tsv/util/money.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUpAll(() async {
     await initializeDateFormatting('de_DE', null);
+  });
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
   });
 
   group('Money', () {
@@ -215,6 +223,55 @@ void main() {
       final d = CashDay.fromMap('2025-11-12', null);
       expect(d.openingCents, 0);
       expect(d.note, '');
+    });
+  });
+
+  group('AppLock', () {
+    test('ohne Einrichtung gibt es keine PIN', () async {
+      expect(await AppLock.hasPin(), isFalse);
+      expect(await AppLock.verify('1234'), isFalse);
+    });
+
+    test('legt eine PIN an und prueft sie', () async {
+      expect(await AppLock.setPin('2468'), isNull);
+      expect(await AppLock.hasPin(), isTrue);
+      expect(await AppLock.verify('2468'), isTrue);
+      expect(await AppLock.verify('1357'), isFalse);
+    });
+
+    test('weist zu kurze, zu lange und nicht-numerische PINs ab', () async {
+      expect(await AppLock.setPin('123'), isNotNull);
+      expect(await AppLock.setPin('123456789'), isNotNull);
+      expect(await AppLock.setPin('12a4'), isNotNull);
+    });
+
+    test('weist lauter gleiche Ziffern ab', () async {
+      expect(await AppLock.setPin('1111'), isNotNull);
+      expect(await AppLock.setPin('000000'), isNotNull);
+    });
+
+    test('speichert die PIN nicht im Klartext', () async {
+      await AppLock.setPin('9753');
+      final sp = await SharedPreferences.getInstance();
+      final werte = sp.getKeys().map((k) => sp.get(k).toString()).join(' ');
+      expect(werte.contains('9753'), isFalse);
+    });
+
+    test('gleiche PIN ergibt dank Salt unterschiedliche Ablage', () async {
+      await AppLock.setPin('2468');
+      final sp1 = await SharedPreferences.getInstance();
+      final h1 = sp1.getString('lock.pinHash');
+      SharedPreferences.setMockInitialValues({});
+      await AppLock.setPin('2468');
+      final sp2 = await SharedPreferences.getInstance();
+      expect(sp2.getString('lock.pinHash'), isNot(h1));
+    });
+
+    test('entfernt die PIN wieder', () async {
+      await AppLock.setPin('2468');
+      await AppLock.clearPin();
+      expect(await AppLock.hasPin(), isFalse);
+      expect(await AppLock.verify('2468'), isFalse);
     });
   });
 }

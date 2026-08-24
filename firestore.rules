@@ -1,95 +1,146 @@
 rules_version = '2';
+
+// Sicherheitsregeln der TSV KassenApp.
+//
+// Die Rolle stammt aus den Custom Claims des Auth-Tokens, nicht mehr aus
+// users/{uid}.role. Das schliesst zwei Dinge aus: dass ein Nutzer sich selbst
+// befoerdert (Claims kann nur das Backend setzen), und dass jede einzelne
+// Regelauswertung ein zusaetzliches Dokument liest.
+//
+// Gesetzt werden die Claims in functions/admin_users.js.
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ------------------------------------------------------------- Grundlagen
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function userDoc(uid) {
-      return get(/databases/$(database)/documents/users/$(uid));
+    function role() {
+      return isSignedIn() ? request.auth.token.get('role', '') : '';
     }
 
-    function userRole() {
-      return isSignedIn() ? userDoc(request.auth.uid).data.role : null;
+    function isAdmin()   { return role() == 'admin'; }
+    function isServer()  { return role() == 'server'; }
+    function isKitchen() { return role() == 'kitchen'; }
+    function isBar()     { return role() == 'bar'; }
+
+    /// Nur die genannten Felder wurden veraendert.
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
 
-    function isAdmin() {
-      return userRole() == 'admin';
-    }
+    // ---------------------------------------------------------------- Nutzer
 
-    function isServer() {
-      return userRole() == 'server';
-    }
-
-    function isKitchen() {
-      return userRole() == 'kitchen';
-    }
-
-    function isBar() {
-      return userRole() == 'bar';
-    }
-
-    // Users: allow a user to read/write their own profile; admin can read all
+    // Anzeigedaten und Push-Token darf jeder an seinem eigenen Dokument
+    // pflegen. Rolle und Sperrstatus ausdruecklich nicht - die setzt allein das
+    // Backend ueber das Admin-SDK, das an diesen Regeln vorbeischreibt.
     match /users/{uid} {
       allow read: if isSignedIn() && (uid == request.auth.uid || isAdmin());
-      allow write: if isSignedIn() && (uid == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() && uid == request.auth.uid
+        && request.resource.data.keys()
+             .hasOnly(['uid', 'email', 'displayName', 'deviceTokens', 'lastToken', 'updatedAt']);
+
+      allow update: if isSignedIn() && uid == request.auth.uid
+        && onlyChanges(['displayName', 'deviceTokens', 'lastToken', 'updatedAt']);
+
+      allow delete: if false;
     }
 
-    // Menu: readable by signed-in users; writable only by admin
+    // ------------------------------------------------------------ Stammdaten
+
     match /menu/{doc} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // Tables: readable by signed-in users; writable only by admin
     match /tables/{doc} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // Events: readable by signed-in users; writable only by admin
     match /events/{doc} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // Tickets: readable by signed-in users; writes restricted by role and operation
+    match /orgs/{doc} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // --------------------------------------------------------------- Tickets
+
     match /tickets/{ticketId} {
       allow read: if isSignedIn();
-      // Create only by server/admin; if server, serverId must match creator
+
       allow create: if isSignedIn() && (
         (isServer() && request.resource.data.serverId == request.auth.uid) || isAdmin()
       );
-      // Update tickets only by server/admin; tickets marked paid are immutable; serverId cannot change; status must be valid
+
+      // Bezahlte Tickets sind unveraenderlich; der zustaendige Kellner darf
+      // nicht wechseln; der Status muss einer der bekannten sein.
       allow update: if isSignedIn() && (isServer() || isAdmin())
         && resource.data.status != 'paid'
         && request.resource.data.serverId == resource.data.serverId
-        && request.resource.data.status in ['open','sentToKitchen','ready','served','paid'];
-      // Delete tickets admin-only
+        && request.resource.data.status in ['open', 'sentToKitchen', 'ready', 'served', 'paid'];
+
       allow delete: if isAdmin();
 
-      // Items subcollection under a ticket
       match /items/{itemId} {
         allow read: if isSignedIn();
-        // Servers/Admin can manage items fully
-        allow create, update, delete: if isSignedIn() && (isServer() || isAdmin());
-        // Kitchen can only update items for route == 'kitchen' and only set status to 'ready' (and touch updatedAt)
-        allow update: if isSignedIn() && isKitchen() &&
-          request.resource.data.route == 'kitchen' &&
-          resource.data.route == 'kitchen' &&
-          request.resource.data.status == 'ready' &&
-          (resource.data.status == 'open' || resource.data.status == 'sentToKitchen');
-        // Bar can only update items for route == 'bar' and only set status to 'ready'
-        allow update: if isSignedIn() && isBar() &&
-          request.resource.data.route == 'bar' &&
-          resource.data.route == 'bar' &&
-          request.resource.data.status == 'ready' &&
-          (resource.data.status == 'open' || resource.data.status == 'sentToKitchen');
+
+        // Positionen eines bereits abgerechneten Tickets bleiben unangetastet.
+        // Vorher fehlte diese Pruefung: das Ticket war nach der Zahlung
+        // gesperrt, seine Positionen aber weiterhin aenderbar.
+        allow create, update, delete: if isSignedIn()
+          && (isServer() || isAdmin())
+          && get(/databases/$(database)/documents/tickets/$(ticketId)).data.status != 'paid';
+
+        // Kueche und Bar duerfen ausschliesslich Positionen ihrer eigenen
+        // Route auf 'ready' setzen.
+        allow update: if isSignedIn() && isKitchen()
+          && request.resource.data.route == 'kitchen'
+          && resource.data.route == 'kitchen'
+          && request.resource.data.status == 'ready'
+          && resource.data.status in ['open', 'sentToKitchen'];
+
+        allow update: if isSignedIn() && isBar()
+          && request.resource.data.route == 'bar'
+          && resource.data.route == 'bar'
+          && request.resource.data.status == 'ready'
+          && resource.data.status in ['open', 'sentToKitchen'];
       }
     }
 
-    // Kassentage: Kassenstart, Einlagen, Entnahmen. Nur Admin, weil die
-    // Kasse insgesamt admin-only ist. Die Dokument-ID ist der Tag (yyyy-MM-dd).
+    // -------------------------------------------------------------- Verkaeufe
+
+    match /sales/{saleId} {
+      // Einzelabruf: der Kellner braucht den gerade gebuchten Beleg, um ihn
+      // zu drucken. Auflisten dagegen ist Auswertung und bleibt dem Admin
+      // vorbehalten - sonst sieht jede Aushilfe alle Tagesumsaetze.
+      allow get: if isSignedIn() && (isServer() || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isSignedIn() && (isServer() || isAdmin())
+        && request.resource.data.paymentMethod in ['cash', 'card']
+        && request.resource.data.total is number
+        && request.resource.data.total >= 0
+        && request.resource.data.day is string
+        && request.resource.data.serverId is string;
+
+      // Gebuchte Verkaeufe sind unveraenderlich.
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ------------------------------------------------------------ Kassentage
+
+    // Kassenstart, Einlagen, Entnahmen. Nur Admin, weil die Kasse insgesamt
+    // admin-only ist. Die Dokument-ID ist der Tag (yyyy-MM-dd).
     match /cashDays/{day} {
       allow read: if isAdmin();
       allow create, update: if isAdmin()
@@ -101,18 +152,6 @@ service cloud.firestore {
         && request.resource.data.withdrawalCents >= 0
         && request.resource.data.day == day;
       allow delete: if false;
-    }
-
-    // Sales: readable by signed-in users (for receipts/cashier); writes by server/admin with basic validation
-    match /sales/{saleId} {
-      allow read: if isSignedIn();
-      // Sales are append-only; no updates after creation
-      allow create: if isSignedIn() && (isServer() || isAdmin())
-        && request.resource.data.paymentMethod in ['cash', 'card']
-        && request.resource.data.total is number
-        && request.resource.data.day is string;
-      allow update: if false;
-      allow delete: if isAdmin();
     }
   }
 }
