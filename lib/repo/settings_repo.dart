@@ -1,15 +1,33 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../state/device_context.dart';
 
 class SettingsRepo {
   final _db = FirebaseFirestore.instance;
 
+  /// Einzelmandanten-Rueckfall auf das Organisationsdokument.
+  ///
+  /// Sortiert ausdruecklich nach Dokument-ID, damit die Auswahl nicht von
+  /// Firestores impliziter Standardreihenfolge abhaengt. Holt zwei Dokumente,
+  /// um Mehrdeutigkeit erkennen und melden zu koennen.
+  Query<Map<String, dynamic>> _orgFallbackQuery() =>
+      _db.collection('orgs').orderBy(FieldPath.documentId).limit(2);
+
+  void _warnIfAmbiguous(QuerySnapshot<Map<String, dynamic>> qs) {
+    if (kDebugMode && qs.docs.length > 1) {
+      debugPrint('[SettingsRepo] Mehr als eine Organisation vorhanden '
+          '(${qs.docs.map((d) => d.id).join(', ')}). '
+          'Verwende "${qs.docs.first.id}".');
+    }
+  }
+
   Future<String?> _orgIdOrFallback() async {
     final orgId = DeviceContext.deviceOrgId;
     if (orgId != null && orgId.isNotEmpty) return orgId;
     try {
-      final snap = await _db.collection('orgs').limit(1).get();
+      final snap = await _orgFallbackQuery().get();
+      _warnIfAmbiguous(snap);
       if (snap.docs.isNotEmpty) {
         final id = snap.docs.first.id;
         // update DeviceContext for future calls
@@ -30,7 +48,8 @@ class SettingsRepo {
       return _db.collection('orgs').doc(orgId).snapshots().map((snap) => (snap.data() ?? const {}));
     }
     // Fallback: single-tenant default to first org document
-    return _db.collection('orgs').limit(1).snapshots().map((qs) {
+    return _orgFallbackQuery().snapshots().map((qs) {
+      _warnIfAmbiguous(qs);
       if (qs.docs.isEmpty) return const {};
       final d = qs.docs.first;
       // Cache for later
