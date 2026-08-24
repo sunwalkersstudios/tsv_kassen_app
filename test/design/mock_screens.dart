@@ -7,161 +7,56 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:tsv/models/entities.dart';
+import 'package:tsv/screens/table_plan_screen.dart';
 import 'package:tsv/util/money.dart';
 
 // --------------------------------------------------------------- Tischplan
 
+/// Zeigt den echten Tischplan mit Beispieldaten - kein Nachbau.
 class MockTablePlan extends StatelessWidget {
   const MockTablePlan({super.key});
 
-  static const _tables = [
-    ('1', 4, 3240, 'ready-kitchen', 'Jana', '18:42'),
-    ('2', 2, 0, 'free', '', ''),
-    ('3', 6, 8750, 'open', 'Marc', '19:05'),
-    ('4', 4, 0, 'free', '', ''),
-    ('5', 8, 12480, 'ready-bar', 'Jana', '17:58'),
-    ('6', 2, 1900, 'open', 'Tim', '19:31'),
-    ('7', 4, 0, 'free', '', ''),
-    ('8', 10, 24600, 'open', 'Marc', '18:15'),
+  static final _tische = [
+    TableEntity(id: 't1', name: 'Tisch 1', row: 0, col: 0),
+    TableEntity(id: 't2', name: 'Tisch 2', row: 0, col: 1),
+    TableEntity(id: 't3', name: 'Tisch 3', row: 0, col: 2),
+    TableEntity(id: 't4', name: 'Tisch 4', row: 0, col: 3),
+    TableEntity(id: 't5', name: 'Tisch 5', row: 1, col: 0),
+    TableEntity(id: 't6', name: 'Tisch 6', row: 1, col: 1),
+    TableEntity(id: 't7', name: 'Tisch 7', row: 1, col: 2),
+    TableEntity(id: 't8', name: 'Tisch 8', row: 1, col: 3),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tischplan'),
-        actions: [
-          _Avatar(initials: 'KE', label: 'Kellner'),
-          const SizedBox(width: 12),
-        ],
+        actions: [_Avatar(initials: 'KE', label: 'Kellner'), const SizedBox(width: 12)],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _Stat(label: 'Offen', value: Money.format(50970), accent: true),
-                const SizedBox(width: 12),
-                _Stat(label: 'Belegt', value: '5 von 8'),
-                const SizedBox(width: 12),
-                _Stat(label: 'Fertig zum Servieren', value: '2', highlight: cs.secondary),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: GridView.count(
-                crossAxisCount: 4,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 1.32,
-                children: [
-                  for (final (nr, plaetze, cents, status, kellner, seit) in _tables)
-                    _TableCard(nummer: nr, plaetze: plaetze, cents: cents,
-                        status: status, kellner: kellner, seit: seit),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TableCard extends StatelessWidget {
-  final String nummer;
-  final int plaetze;
-  final int cents;
-  final String status;
-  final String kellner;
-  final String seit;
-  const _TableCard({required this.nummer, required this.plaetze, required this.cents,
-      required this.status, required this.kellner, required this.seit});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-    final frei = status == 'free';
-    final fertig = status.startsWith('ready');
-
-    final streifen = frei
-        ? cs.outlineVariant
-        : fertig
-            ? cs.secondary
-            : cs.primary;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: frei ? cs.surface : cs.surfaceContainer,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: fertig ? cs.secondary : cs.outlineVariant, width: fertig ? 2 : 1),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Statusstreifen: traegt die Information, ist keine Zierde
-          Container(height: 5, color: streifen),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(nummer,
-                          style: t.textTheme.displaySmall?.copyWith(
-                              color: frei ? cs.onSurfaceVariant : cs.onSurface)),
-                      Row(children: [
-                        Icon(Icons.person, size: 14, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 2),
-                        Text('$plaetze', style: t.textTheme.bodySmall),
-                      ]),
-                    ],
-                  ),
-                  if (!frei) ...[
-                    const SizedBox(height: 2),
-                    Row(children: [
-                      Text(kellner, style: t.textTheme.bodySmall),
-                      Text('  ·  seit $seit', style: t.textTheme.bodySmall),
-                    ]),
-                  ],
-                  const Spacer(),
-                  if (fertig)
-                    Row(children: [
-                      Icon(status == 'ready-bar' ? Icons.local_bar : Icons.restaurant,
-                          size: 15, color: cs.secondary),
-                      const SizedBox(width: 5),
-                      Text(status == 'ready-bar' ? 'Getränke fertig' : 'Speisen fertig',
-                          style: t.textTheme.bodySmall?.copyWith(
-                              color: cs.secondary, fontWeight: FontWeight.w700)),
-                    ])
-                  else if (frei)
-                    Text('frei', style: t.textTheme.bodySmall)
-                  else
-                    const SizedBox.shrink(),
-                  const SizedBox(height: 4),
-                  Text(
-                    cents == 0 ? '—' : Money.format(cents),
-                    style: t.textTheme.titleLarge?.copyWith(
-                      color: cents == 0 ? cs.onSurfaceVariant : cs.primary,
-                      fontSize: 20,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+      body: TablePlanGrid(
+        tische: _tische,
+        betraege: const {'t1': 3240, 't3': 8750, 't5': 12480, 't6': 1900, 't8': 24600},
+        flags: const {
+          't1': {'kitchen': true, 'bar': false, 'billable': false},
+          't5': {'kitchen': false, 'bar': true, 'billable': false},
+          't8': {'kitchen': false, 'bar': false, 'billable': true},
+        },
+        fertigJeTisch: const {
+          't1': {
+            'kitchen': [
+              {'name': 'Schnitzel'}
+            ]
+          },
+          't5': {
+            'bar': [
+              {'name': 'Bier'},
+              {'name': 'Radler'}
+            ]
+          },
+        },
+        merged: false,
       ),
     );
   }
@@ -473,7 +368,7 @@ class MockCashier extends StatelessWidget {
                                 children: [
                                   SizedBox(
                                       width: 46,
-                                      child: Text('${menge}×',
+                                      child: Text('$menge×',
                                           style: t.textTheme.titleMedium?.copyWith(color: cs.primary))),
                                   Expanded(child: Text(name, style: t.textTheme.bodyLarge)),
                                   Text(Money.format(cents), style: t.textTheme.bodyLarge),
@@ -578,39 +473,6 @@ class _Card extends StatelessWidget {
           const SizedBox(height: 12),
           Expanded(child: child),
         ],
-      ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool accent;
-  final Color? highlight;
-  const _Stat({required this.label, required this.value, this.accent = false, this.highlight});
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-    return Expanded(
-      child: Container(
-        decoration: BoxDecoration(
-          color: cs.surfaceContainer,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: cs.outlineVariant),
-        ),
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label.toUpperCase(), style: t.textTheme.labelSmall),
-            const SizedBox(height: 4),
-            Text(value,
-                style: t.textTheme.headlineMedium?.copyWith(
-                    color: highlight ?? (accent ? cs.primary : cs.onSurface))),
-          ],
-        ),
       ),
     );
   }
