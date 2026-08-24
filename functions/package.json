@@ -3,7 +3,7 @@
   "description": "Cloud Functions for TSV KassenApp",
   "version": "0.1.0",
   "engines": {
-    "node": "^18 || ^20"
+    "node": "22"
   },
   "private": true,
   "main": "index.js",
