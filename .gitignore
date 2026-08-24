@@ -79,3 +79,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Abhaengigkeiten und lokale Logs (nachtraeglich ergaenzt)
+node_modules/
+**/node_modules/
+firestore-debug.log
+firebase-debug.log
+.env
+secrets/
