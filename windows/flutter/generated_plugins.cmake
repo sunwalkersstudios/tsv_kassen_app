@@ -8,9 +8,13 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_core
   local_auth_windows
   permission_handler_windows
+  printing
+  share_plus
+  url_launcher_windows
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)
