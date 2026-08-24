@@ -7,7 +7,11 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:tsv/models/cash_day.dart';
 import 'package:tsv/models/entities.dart';
+import 'package:tsv/models/report_period.dart';
+import 'package:tsv/models/sales_summary.dart';
+import 'package:tsv/screens/cashier_screen.dart';
 import 'package:tsv/screens/table_plan_screen.dart';
 import 'package:tsv/util/money.dart';
 
@@ -278,224 +282,64 @@ class _TicketLine extends StatelessWidget {
 
 // ------------------------------------------------------------------ Kasse
 
+/// Zeigt die echte Kasse mit Beispieldaten - kein Nachbau.
 class MockCashier extends StatelessWidget {
   const MockCashier({super.key});
 
-  static const _artikel = [
-    ('Schnitzel', 41, 51250),
-    ('Bier/Radler 0,4', 70, 24500),
-    ('Grünkohl', 12, 18600),
-    ('Currywurst Pommes', 15, 12750),
-    ('Cola, Fanta 0,5', 30, 10500),
-    ('Port. Pommes', 22, 7700),
-  ];
+  static List<Map<String, dynamic>> _verkaeufe() {
+    final artikel = [
+      ('Schnitzel', 41, 1250),
+      ('Bier/Radler 0,4', 70, 350),
+      ('Grünkohl', 12, 1550),
+      ('Currywurst Pommes', 15, 850),
+      ('Cola, Fanta 0,5', 30, 350),
+      ('Port. Pommes', 22, 350),
+    ];
+    // Ein Beleg je Artikel reicht: die Auswertung fasst ohnehin zusammen.
+    return [
+      for (final (name, menge, preis) in artikel)
+        {
+          'day': '2025-10-22',
+          'totalCents': menge * preis,
+          'paymentMethod': 'cash',
+          'items': [
+            {'name': name, 'qty': menge, 'lineTotalCents': menge * preis}
+          ],
+        },
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
+    final summary = SalesSummary.fromSales(_verkaeufe());
+    const kassentag = CashDay(
+      day: '2025-10-22',
+      openingCents: 15000,
+      depositCents: 0,
+      withdrawalCents: 5000,
+    );
+    final drawer = kassentag.drawerCents(summary.cashCents);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Kasse'),
+        leading: const Icon(Icons.arrow_back),
         actions: [_Avatar(initials: 'AD', label: 'Admin'), const SizedBox(width: 12)],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                for (final (label, aktiv) in [('Tag', true), ('Woche', false), ('Monat', false), ('Jahr', false)]) ...[
-                  _Chip(label: label, aktiv: aktiv),
-                  const SizedBox(width: 8),
-                ],
-                const Spacer(),
-                Icon(Icons.chevron_left, color: cs.onSurfaceVariant),
-                const SizedBox(width: 14),
-                Text('Mittwoch, 22. Oktober 2025', style: t.textTheme.titleMedium),
-                const SizedBox(width: 14),
-                Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
-              ],
-            ),
-            const SizedBox(height: 20),
-            // Die Tageszahl ist die Hauptsache - entsprechend gross
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: cs.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 22),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('TAGESUMSATZ',
-                          style: t.textTheme.labelSmall?.copyWith(color: cs.onPrimaryContainer)),
-                      const SizedBox(height: 6),
-                      Text(Money.format(66330),
-                          style: t.textTheme.displayLarge?.copyWith(color: cs.onPrimaryContainer)),
-                    ],
-                  ),
-                  const Spacer(),
-                  _MiniStat(label: 'Bar', value: Money.format(66330), color: cs.onPrimaryContainer),
-                  const SizedBox(width: 28),
-                  _MiniStat(label: 'Karte', value: Money.format(0), color: cs.onPrimaryContainer),
-                  const SizedBox(width: 28),
-                  _MiniStat(label: 'Belege', value: '22', color: cs.onPrimaryContainer),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: _Card(
-                      titel: 'Verkäufe je Artikel',
-                      child: Column(
-                        children: [
-                          for (final (name, menge, cents) in _artikel)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 7),
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                      width: 46,
-                                      child: Text('$menge×',
-                                          style: t.textTheme.titleMedium?.copyWith(color: cs.primary))),
-                                  Expanded(child: Text(name, style: t.textTheme.bodyLarge)),
-                                  Text(Money.format(cents), style: t.textTheme.bodyLarge),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    flex: 2,
-                    child: _Card(
-                      titel: 'Kassenbestand',
-                      child: Column(
-                        children: [
-                          _Zeile('Kassenstart', Money.format(15000)),
-                          _Zeile('Barumsatz', Money.format(66330)),
-                          _Zeile('Einlagen', Money.format(0)),
-                          _Zeile('Entnahmen', '− ${Money.format(5000)}'),
-                          const SizedBox(height: 8),
-                          Divider(color: cs.outlineVariant),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Kasseninhalt', style: t.textTheme.titleMedium),
-                              Text(Money.format(76330),
-                                  style: t.textTheme.headlineSmall?.copyWith(color: cs.primary)),
-                            ],
-                          ),
-                          const Spacer(),
-                          Row(children: [
-                            Expanded(
-                              child: FilledButton.icon(
-                                onPressed: () {},
-                                icon: const Icon(Icons.picture_as_pdf, size: 20),
-                                label: const Text('PDF'),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () {},
-                                icon: const Icon(Icons.print, size: 20),
-                                label: const Text('Bon'),
-                              ),
-                            ),
-                          ]),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+      body: CashierBody(
+        period: ReportPeriod(PeriodKind.day, DateTime(2025, 10, 22)),
+        summary: summary,
+        cashDays: const {'2025-10-22': kassentag},
+        opening: kassentag.openingCents,
+        deposit: kassentag.depositCents,
+        withdrawal: kassentag.withdrawalCents,
+        drawer: drawer,
       ),
     );
   }
 }
 
 // ------------------------------------------------------------- Bausteine
-
-class _Zeile extends StatelessWidget {
-  final String label;
-  final String wert;
-  const _Zeile(this.label, this.wert);
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: Theme.of(context).textTheme.bodyLarge),
-            Text(wert, style: Theme.of(context).textTheme.bodyLarge),
-          ],
-        ),
-      );
-}
-
-class _Card extends StatelessWidget {
-  final String titel;
-  final Widget child;
-  const _Card({required this.titel, required this.child});
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: t.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: t.colorScheme.outlineVariant),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(titel.toUpperCase(), style: t.textTheme.labelSmall),
-          const SizedBox(height: 12),
-          Expanded(child: child),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  const _MiniStat({required this.label, required this.value, required this.color});
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(label.toUpperCase(), style: t.textTheme.labelSmall?.copyWith(color: color)),
-        const SizedBox(height: 3),
-        Text(value, style: t.textTheme.titleLarge?.copyWith(color: color)),
-      ],
-    );
-  }
-}
 
 class _Chip extends StatelessWidget {
   final String label;

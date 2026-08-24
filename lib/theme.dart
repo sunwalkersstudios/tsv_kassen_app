@@ -230,9 +230,14 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
+      // Ausgewaehltes Segment in Kupfer, nicht im Standardgruen von Material:
+      // Gruen ist in dieser App fuer "fertig" reserviert. Traegt es auch eine
+      // blosse Auswahl, bedeutet ein gruenes Signal in der Kueche nichts mehr.
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: SegmentedButton.styleFrom(
           minimumSize: const Size(0, 52),
+          selectedBackgroundColor: scheme.primaryContainer,
+          selectedForegroundColor: scheme.onPrimaryContainer,
           textStyle: TextStyle(fontFamily: fontFamily, fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ),

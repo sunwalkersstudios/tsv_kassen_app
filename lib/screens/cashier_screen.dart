@@ -240,9 +240,6 @@ class _CashierScreenState extends State<CashierScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final canGoForward = !_period.shift(1).isFuture;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Kasse'),
@@ -258,55 +255,136 @@ class _CashierScreenState extends State<CashierScreen> {
           },
         ),
       ),
-      body: Column(
-        children: [
-          _periodBar(theme, canGoForward),
-          const Divider(height: 1),
-          Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _salesRepo.streamSalesForRange(_period.fromKey, _period.toKey),
-              builder: (context, salesSnap) {
-                if (salesSnap.hasError) {
-                  return _message(Icons.error_outline, 'Verkäufe konnten nicht geladen werden',
-                      '${salesSnap.error}');
-                }
-                if (!salesSnap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final summary = SalesSummary.fromSales(salesSnap.data!);
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: _salesRepo.streamSalesForRange(_period.fromKey, _period.toKey),
+        builder: (context, salesSnap) {
+          if (salesSnap.hasError) {
+            return _message(Icons.error_outline, 'Verkäufe konnten nicht geladen werden',
+                '${salesSnap.error}');
+          }
+          if (!salesSnap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final summary = SalesSummary.fromSales(salesSnap.data!);
 
-                return FutureBuilder<Map<String, CashDay>>(
-                  future: _cashFuture,
-                  builder: (context, cashSnap) {
-                    final cashDays = cashSnap.data ?? const <String, CashDay>{};
-                    final opening = cashDays.values.fold(0, (a, d) => a + d.openingCents);
-                    final deposit = cashDays.values.fold(0, (a, d) => a + d.depositCents);
-                    final withdrawal = cashDays.values.fold(0, (a, d) => a + d.withdrawalCents);
-                    final drawer = opening + summary.cashCents + deposit - withdrawal;
+          return FutureBuilder<Map<String, CashDay>>(
+            future: _cashFuture,
+            builder: (context, cashSnap) {
+              final cashDays = cashSnap.data ?? const <String, CashDay>{};
+              final opening = cashDays.values.fold(0, (a, d) => a + d.openingCents);
+              final deposit = cashDays.values.fold(0, (a, d) => a + d.depositCents);
+              final withdrawal = cashDays.values.fold(0, (a, d) => a + d.withdrawalCents);
+              final drawer = opening + summary.cashCents + deposit - withdrawal;
 
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                      children: [
-                        _kpiRow(theme, summary),
-                        const SizedBox(height: 16),
-                        _cashCard(theme, cashDays, summary, opening, deposit, withdrawal, drawer),
-                        if (summary.days.length > 1) ...[
-                          const SizedBox(height: 16),
-                          _daysCard(theme, summary),
-                        ],
-                        const SizedBox(height: 16),
-                        _itemsCard(theme, summary),
-                        const SizedBox(height: 16),
-                        _actions(summary, cashDays, drawer),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+              return CashierBody(
+                period: _period,
+                summary: summary,
+                cashDays: cashDays,
+                opening: opening,
+                deposit: deposit,
+                withdrawal: withdrawal,
+                drawer: drawer,
+                onPeriod: _setPeriod,
+                onPickDate: _pickDate,
+                onEditCashDay: _editCashDay,
+                onExport: (kind) => _export(kind, summary, cashDays, drawer),
+                onResetDay: _resetDay,
+                onPrintDay: _printDaySummary,
+              );
+            },
+          );
+        },
       ),
+    );
+  }
+
+  Widget _message(IconData icon, String title, String detail) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 40),
+              const SizedBox(height: 12),
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 6),
+              Text(detail,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+      );
+}
+
+/// Reine Darstellung der Kasse - bekommt fertige Daten und Rueckrufe, kennt
+/// weder Firestore noch Zustand.
+///
+/// Oeffentlich, damit die Entwurfsvorschau unter test/design genau diesen
+/// Bildschirm zeichnet statt einer Parallelfassung, die auseinanderlaeuft.
+/// Die Rueckrufe duerfen fehlen; in der Vorschau passiert dann nichts.
+class CashierBody extends StatelessWidget {
+  final ReportPeriod period;
+  final SalesSummary summary;
+  final Map<String, CashDay> cashDays;
+  final int opening;
+  final int deposit;
+  final int withdrawal;
+  final int drawer;
+
+  final void Function(ReportPeriod)? onPeriod;
+  final VoidCallback? onPickDate;
+  final void Function(CashDay)? onEditCashDay;
+  final void Function(String kind)? onExport;
+  final void Function(String day)? onResetDay;
+  final VoidCallback? onPrintDay;
+
+  const CashierBody({
+    super.key,
+    required this.period,
+    required this.summary,
+    required this.cashDays,
+    required this.opening,
+    required this.deposit,
+    required this.withdrawal,
+    required this.drawer,
+    this.onPeriod,
+    this.onPickDate,
+    this.onEditCashDay,
+    this.onExport,
+    this.onResetDay,
+    this.onPrintDay,
+  });
+
+  SalesSummary get s => summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final canGoForward = !period.shift(1).isFuture;
+    return Column(
+      children: [
+        _periodBar(theme, canGoForward),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+            children: [
+              _kpiRow(theme),
+              const SizedBox(height: 16),
+              _cashCard(theme, cashDays, summary, opening, deposit, withdrawal, drawer),
+              if (summary.days.length > 1) ...[
+                const SizedBox(height: 16),
+                _daysCard(theme),
+              ],
+              const SizedBox(height: 16),
+              _itemsCard(theme),
+              const SizedBox(height: 16),
+              _actions(context),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -321,8 +399,8 @@ class _CashierScreenState extends State<CashierScreen> {
                 ButtonSegment(value: PeriodKind.month, label: Text('Monat')),
                 ButtonSegment(value: PeriodKind.year, label: Text('Jahr')),
               ],
-              selected: {_period.kind},
-              onSelectionChanged: (s) => _setPeriod(_period.withKind(s.first)),
+              selected: {period.kind},
+              onSelectionChanged: (s) => onPeriod?.call(period.withKind(s.first)),
             ),
             const SizedBox(height: 8),
             Row(
@@ -330,14 +408,14 @@ class _CashierScreenState extends State<CashierScreen> {
                 IconButton(
                   icon: const Icon(Icons.chevron_left),
                   tooltip: 'Vorheriger Zeitraum',
-                  onPressed: () => _setPeriod(_period.shift(-1)),
+                  onPressed: () => onPeriod?.call(period.shift(-1)),
                 ),
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: _pickDate,
+                    onPressed: onPickDate,
                     icon: const Icon(Icons.calendar_month, size: 18),
                     label: Text(
-                      _period.label,
+                      period.label,
                       textAlign: TextAlign.center,
                       style: theme.textTheme.titleMedium,
                       overflow: TextOverflow.ellipsis,
@@ -347,7 +425,7 @@ class _CashierScreenState extends State<CashierScreen> {
                 IconButton(
                   icon: const Icon(Icons.chevron_right),
                   tooltip: canGoForward ? 'Nächster Zeitraum' : 'Kein Zeitraum in der Zukunft',
-                  onPressed: canGoForward ? () => _setPeriod(_period.shift(1)) : null,
+                  onPressed: canGoForward ? () => onPeriod?.call(period.shift(1)) : null,
                 ),
               ],
             ),
@@ -355,40 +433,82 @@ class _CashierScreenState extends State<CashierScreen> {
         ),
       );
 
-  Widget _kpiRow(ThemeData theme, SalesSummary s) {
-    Widget tile(String label, String value, {bool strong = false}) => Expanded(
-          child: Card(
-            margin: EdgeInsets.zero,
-            color: strong ? theme.colorScheme.primaryContainer : null,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: theme.textTheme.labelSmall),
-                  const SizedBox(height: 4),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(value,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: strong ? FontWeight.bold : FontWeight.w500)),
-                  ),
-                ],
-              ),
-            ),
-          ),
+  /// Kopfblock mit der Tageszahl.
+  ///
+  /// Vier gleich grosse Kacheln zeigten vier gleich wichtige Zahlen - das ist
+  /// die Kasse aber nicht. Der Umsatz des Zeitraums ist die eine Zahl, auf die
+  /// jemand schaut; Bar, Karte und Belegzahl sind Beiwerk und stehen
+  /// entsprechend kleiner daneben.
+  Widget _kpiRow(ThemeData theme) {
+    final cs = theme.colorScheme;
+
+    Widget klein(String label, String wert) => Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label.toUpperCase(),
+                style: theme.textTheme.labelSmall?.copyWith(color: cs.onPrimaryContainer)),
+            const SizedBox(height: 2),
+            Text(wert,
+                style: theme.textTheme.titleLarge?.copyWith(color: cs.onPrimaryContainer)),
+          ],
         );
 
-    return Row(children: [
-      tile('Gesamt', Money.format(s.totalCents), strong: true),
-      const SizedBox(width: 8),
-      tile('Bar', Money.format(s.cashCents)),
-      const SizedBox(width: 8),
-      tile('Karte', Money.format(s.cardCents)),
-      const SizedBox(width: 8),
-      tile('Belege', '${s.receipts}'),
-    ]);
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cs.primaryContainer,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 20),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final eng = c.maxWidth < 620;
+          final zahl = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('UMSATZ ${period.kindLabel.toUpperCase()}',
+                  style: theme.textTheme.labelSmall?.copyWith(color: cs.onPrimaryContainer)),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(Money.format(s.totalCents),
+                    style: theme.textTheme.displayLarge?.copyWith(color: cs.onPrimaryContainer)),
+              ),
+            ],
+          );
+          final rest = [
+            klein('Bar', Money.format(s.cashCents)),
+            const SizedBox(width: 26),
+            klein('Karte', Money.format(s.cardCents)),
+            const SizedBox(width: 26),
+            klein('Belege', '${s.receipts}'),
+          ];
+
+          // Auf schmalen Geraeten untereinander statt gequetscht nebeneinander.
+          if (eng) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                zahl,
+                const SizedBox(height: 14),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  klein('Bar', Money.format(s.cashCents)),
+                  klein('Karte', Money.format(s.cardCents)),
+                  klein('Belege', '${s.receipts}'),
+                ]),
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [Flexible(child: zahl), const Spacer(), ...rest],
+          );
+        },
+      ),
+    );
   }
 
   Widget _cashCard(
@@ -414,8 +534,8 @@ class _CashierScreenState extends State<CashierScreen> {
           ),
         );
 
-    final single = _period.isSingleDay;
-    final day = cashDays[_period.fromKey] ?? CashDay.empty(_period.fromKey);
+    final single = period.isSingleDay;
+    final day = cashDays[period.fromKey] ?? CashDay.empty(period.fromKey);
 
     return Card(
       child: Padding(
@@ -431,7 +551,7 @@ class _CashierScreenState extends State<CashierScreen> {
                             ?.copyWith(fontWeight: FontWeight.bold))),
                 if (single)
                   TextButton.icon(
-                    onPressed: () => _editCashDay(day),
+                    onPressed: () => onEditCashDay?.call(day),
                     icon: const Icon(Icons.edit, size: 18),
                     label: const Text('Bearbeiten'),
                   ),
@@ -464,7 +584,7 @@ class _CashierScreenState extends State<CashierScreen> {
     );
   }
 
-  Widget _daysCard(ThemeData theme, SalesSummary s) {
+  Widget _daysCard(ThemeData theme) {
     final fmt = DateFormat('EEE, d. MMM', 'de_DE');
     return Card(
       child: Padding(
@@ -476,7 +596,7 @@ class _CashierScreenState extends State<CashierScreen> {
             const SizedBox(height: 8),
             for (final d in s.days)
               InkWell(
-                onTap: () => _setPeriod(ReportPeriod(PeriodKind.day, DateTime.parse(d.day))),
+                onTap: () => onPeriod?.call(ReportPeriod(PeriodKind.day, DateTime.parse(d.day))),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Row(
@@ -501,7 +621,7 @@ class _CashierScreenState extends State<CashierScreen> {
     );
   }
 
-  Widget _itemsCard(ThemeData theme, SalesSummary s) => Card(
+  Widget _itemsCard(ThemeData theme) => Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -544,28 +664,28 @@ class _CashierScreenState extends State<CashierScreen> {
         ),
       );
 
-  Widget _actions(SalesSummary summary, Map<String, CashDay> cashDays, int drawer) => Wrap(
+  Widget _actions(BuildContext context) => Wrap(
         spacing: 8,
         runSpacing: 8,
         children: [
           FilledButton.icon(
-            onPressed: () => _export('pdf', summary, cashDays, drawer),
+            onPressed: () => onExport?.call('pdf'),
             icon: const Icon(Icons.picture_as_pdf),
             label: const Text('PDF teilen'),
           ),
           OutlinedButton.icon(
-            onPressed: () => _export('csv', summary, cashDays, drawer),
+            onPressed: () => onExport?.call('csv'),
             icon: const Icon(Icons.table_view),
             label: const Text('CSV teilen'),
           ),
-          if (_period.isSingleDay) ...[
+          if (period.isSingleDay) ...[
             OutlinedButton.icon(
-              onPressed: _printDaySummary,
+              onPressed: onPrintDay,
               icon: const Icon(Icons.print),
               label: const Text('Tagesabschluss drucken'),
             ),
             TextButton.icon(
-              onPressed: () => _resetDay(_period.fromKey),
+              onPressed: () => onResetDay?.call(period.fromKey),
               icon: const Icon(Icons.restart_alt),
               label: const Text('Tageswerte zurücksetzen'),
             ),
@@ -573,21 +693,4 @@ class _CashierScreenState extends State<CashierScreen> {
         ],
       );
 
-  Widget _message(IconData icon, String title, String detail) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 40),
-              const SizedBox(height: 12),
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 6),
-              Text(detail,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-        ),
-      );
 }
