@@ -107,32 +107,34 @@ class _AdminPrintTemplateScreenState extends State<AdminPrintTemplateScreen> {
   }
   
   Future<void> _printTestBluetooth() async {
+    // Messenger vor dem ersten await greifen, damit der BuildContext
+    // danach nicht mehr gebraucht wird.
+    final messenger = ScaffoldMessenger.of(context);
     try {
       // Speichere erst die aktuellen Vorlagen
       await _save();
-      
-      if (!context.mounted) return;
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Drucke Test-Bon mit aktueller Vorlage...')),
+      if (!mounted) return;
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Drucke Test-Bon mit aktueller Vorlage…')),
       );
-      
+
       // Nutze die vorhandene BluetoothPrinterService printTest Methode
       final btService = BluetoothPrinterService();
       await btService.printTest();
-      
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return;
+
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('✓ Test-Bon gedruckt'),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return;
+      messenger.showSnackBar(
         SnackBar(
-          content: Text('Fehler beim Drucken: \$e'),
+          content: Text('Fehler beim Drucken: $e'),
           backgroundColor: Colors.red,
         ),
       );

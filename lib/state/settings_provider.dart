@@ -4,15 +4,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../repo/settings_repo.dart';
 
 class SettingsProvider extends ChangeNotifier {
-  final _repo = SettingsRepo();
+  /// Erst bei Bedarf angelegt: SettingsRepo greift im Feldinitialisierer auf
+  /// FirebaseFirestore.instance zu und wuerde ohne Firebase sofort werfen.
+  SettingsRepo? _repo;
   bool _mergeKitchenBar = false;
   bool get mergeKitchenBar => _mergeKitchenBar;
 
   StreamSubscription<Map<String, dynamic>>? _sub;
 
-  SettingsProvider() {
+  /// [subscribe] auf false setzen, um ohne Firebase zu laufen (Widget-Tests).
+  SettingsProvider({bool subscribe = true}) {
+    if (!subscribe) return;
+    _repo = SettingsRepo();
     _seedFromCache();
-    _sub = _repo.streamOrgSettings().listen((data) async {
+    _sub = _repo!.streamOrgSettings().listen((data) async {
       final v = data['mergeKitchenBar'] == true;
       if (v != _mergeKitchenBar) {
         _mergeKitchenBar = v;

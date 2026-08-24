@@ -11,9 +11,8 @@ import 'package:tsv/app.dart';
 import 'package:provider/provider.dart';
 import 'package:tsv/state/auth_provider.dart';
 import 'package:tsv/models/entities.dart';
-import 'package:tsv/state/menu_provider.dart';
+import 'package:tsv/state/settings_provider.dart';
 import 'package:tsv/state/tables_provider.dart';
-import 'package:tsv/state/tickets_provider.dart';
 
 void main() {
   // Lightweight mock to avoid Firebase in widget tests
@@ -29,8 +28,7 @@ void main() {
         providers: [
           ChangeNotifierProvider(create: (_) => AuthProvider(skipInit: true)),
           ChangeNotifierProvider(create: (_) => tables),
-          ChangeNotifierProvider(create: (_) => MenuProvider()..seedDefaults()),
-          ChangeNotifierProvider(create: (_) => TicketsProvider()),
+          ChangeNotifierProvider(create: (_) => SettingsProvider(subscribe: false)),
         ],
         child: const TsvApp(),
       ),

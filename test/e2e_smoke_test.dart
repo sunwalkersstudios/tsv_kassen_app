@@ -13,7 +13,10 @@ import 'package:tsv/state/device_context.dart' as dc;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('E2E smoke (org scoped)', () {
+  // Dieser Test spricht echtes Firebase an und braucht ein per
+  // `flutterfire configure` erzeugtes firebase_options.dart sowie laufende
+  // Emulatoren. Als Unit-Test laeuft er deshalb nicht mit.
+  group('E2E smoke (org scoped)', skip: 'Benoetigt Firebase-Konfiguration und Emulatoren', () {
     late FirebaseFirestore db;
     late FirebaseAuth auth;
     late String orgId;

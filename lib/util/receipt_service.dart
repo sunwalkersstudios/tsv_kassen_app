@@ -684,7 +684,7 @@ class ReceiptService {
           .replaceAll('{name}', name)
           .replaceAll('{price}', price.toStringAsFixed(2))
           .replaceAll('{lineTotal}', totalLine.toStringAsFixed(2));
-      final amt = '${totalLine.toStringAsFixed(2)}';
+      final amt = totalLine.toStringAsFixed(2);
       // Direkt encodieren statt createLeftRightText (weil Offset schon im Template ist)
       commands.addAll(latin1.encode('$line $amt\n'));
     }

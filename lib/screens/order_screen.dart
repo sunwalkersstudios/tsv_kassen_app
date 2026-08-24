@@ -396,8 +396,10 @@ class _OrderScreenState extends State<OrderScreen> {
                                     final halfAmount = totalUnpaid / 2;
                                     
                                     if (!mounted) return;
+                                    // this.context: der State-eigene Context gehoert zum
+                                    // mounted-Check oben, das aeussere `context` nicht.
                                     String? mode = await showModalBottomSheet<String>(
-                                      context: context,
+                                      context: this.context,
                                       builder: (ctx) => SafeArea(
                                         child: Column(
                                           mainAxisSize: MainAxisSize.min,

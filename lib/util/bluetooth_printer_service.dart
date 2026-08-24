@@ -1,6 +1,14 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// Diagnoseausgabe, nur im Debug-Build. Ersetzt die frueheren print-Aufrufe.
+void _log(String message) {
+  if (kDebugMode) {
+    debugPrint('[BluetoothPrinter] $message');
+  }
+}
 
 class BluetoothPrinterService {
   static const String _printerAddressKey = 'bluetooth_printer_address';
@@ -18,12 +26,12 @@ class BluetoothPrinterService {
 
     try {
       // Füge bereits verbundene Geräte hinzu (z.B. gekoppelte Geräte)
-      final connectedDevices = await FlutterBluePlus.connectedDevices;
-      print('DEBUG: Verbundene Geräte: ${connectedDevices.length}');
+      final connectedDevices = FlutterBluePlus.connectedDevices;
+      _log('Verbundene Geräte: ${connectedDevices.length}');
       for (var device in connectedDevices) {
         final address = device.remoteId.str;
         final name = device.platformName;
-        print('DEBUG: Verbundenes Gerät: $name ($address)');
+        _log('Verbundenes Gerät: $name ($address)');
         if (!seenAddresses.contains(address)) {
           seenAddresses.add(address);
           devices.add(ScanResult(device: device, advertisementData: AdvertisementData(
@@ -38,20 +46,20 @@ class BluetoothPrinterService {
         }
       }
     } catch (e) {
-      print('DEBUG: Fehler beim Abrufen verbundener Geräte: $e');
+      _log('Fehler beim Abrufen verbundener Geräte: $e');
     }
 
     // Starte Bluetooth-Scan
-    print('DEBUG: Starte Bluetooth-Scan...');
+    _log('Starte Bluetooth-Scan...');
     await FlutterBluePlus.startScan(timeout: timeout);
 
     // Sammle Scan-Ergebnisse (dedupliziert)
     final subscription = FlutterBluePlus.scanResults.listen((results) {
-      print('DEBUG: Scan-Ergebnisse erhalten: ${results.length}');
+      _log('Scan-Ergebnisse erhalten: ${results.length}');
       for (var result in results) {
         final address = result.device.remoteId.str;
         final name = result.device.platformName;
-        print('DEBUG: Gescanntes Gerät: $name ($address)');
+        _log('Gescanntes Gerät: $name ($address)');
         if (!seenAddresses.contains(address)) {
           seenAddresses.add(address);
           devices.add(result);
@@ -64,7 +72,7 @@ class BluetoothPrinterService {
     await FlutterBluePlus.stopScan();
     await subscription.cancel();
 
-    print('DEBUG: Scan beendet. Gefundene Geräte: ${devices.length}');
+    _log('Scan beendet. Gefundene Geräte: ${devices.length}');
     return devices;
   }
 
@@ -121,7 +129,7 @@ class BluetoothPrinterService {
     }
 
     // Verbinde mit dem Gerät - längerer Timeout für stabilere Verbindung
-    print('DEBUG: Verbinde mit Drucker...');
+    _log('Verbinde mit Drucker...');
     await scannedDevice!.connect(
       timeout: const Duration(seconds: 15),
       autoConnect: false, // Direkte Verbindung statt Auto-Connect
@@ -129,7 +137,7 @@ class BluetoothPrinterService {
     
     // Warte kurz bis Verbindung stabil ist
     await Future.delayed(const Duration(milliseconds: 500));
-    print('DEBUG: Verbindung hergestellt');
+    _log('Verbindung hergestellt');
     
     return scannedDevice!;
   }
@@ -158,7 +166,7 @@ class BluetoothPrinterService {
 
     // Sende Daten in kleineren Chunks für GOOJPRT PT-310
     const int chunkSize = 20;
-    print('DEBUG: Sende ${data.length} Bytes in ${(data.length / chunkSize).ceil()} Chunks');
+    _log('Sende ${data.length} Bytes in ${(data.length / chunkSize).ceil()} Chunks');
     
     for (int i = 0; i < data.length; i += chunkSize) {
       final end = (i + chunkSize < data.length) ? i + chunkSize : data.length;
@@ -176,7 +184,7 @@ class BluetoothPrinterService {
     
     // Warte bis alle Daten verarbeitet wurden
     await Future.delayed(const Duration(milliseconds: 500));
-    print('DEBUG: Daten gesendet');
+    _log('Daten gesendet');
   }
 
   /// Trennt die Verbindung zum Drucker
@@ -226,13 +234,13 @@ class BluetoothPrinterService {
 
   /// Testdruck für Bluetooth-Drucker
   Future<void> printTest() async {
-    print('DEBUG: Starte Testdruck...');
+    _log('Starte Testdruck...');
     final printerInfo = await loadSavedPrinter();
     if (printerInfo == null) {
       throw Exception('Kein Bluetooth-Drucker konfiguriert');
     }
 
-    print('DEBUG: Verbinde mit ${printerInfo['name']}...');
+    _log('Verbinde mit ${printerInfo['name']}...');
     final device = await connectToPrinter(printerInfo['address']!);
     
     try {
@@ -258,9 +266,9 @@ class BluetoothPrinterService {
       // Papier vorschub
       commands.addAll([10, 10, 10, 10, 10]); // 5x LF für sichtbares Ergebnis
       
-      print('DEBUG: Sende ${commands.length} Bytes Druckdaten...');
+      _log('Sende ${commands.length} Bytes Druckdaten...');
       await printData(device, commands);
-      print('DEBUG: Testdruck abgeschlossen');
+      _log('Testdruck abgeschlossen');
     } finally {
       await disconnect(device);
     }
@@ -274,7 +282,7 @@ class BluetoothPrinterService {
       throw Exception('Kein Bluetooth-Drucker konfiguriert');
     }
 
-    print('DEBUG: RAW TEST - Verbinde mit ${printerInfo['name']}...');
+    _log('RAW TEST - Verbinde mit ${printerInfo['name']}...');
     final device = await connectToPrinter(printerInfo['address']!);
     
     try {
@@ -282,9 +290,9 @@ class BluetoothPrinterService {
       final text = 'HALLO TEST\nDRUCKER AKTIV\n\n\n\n';
       final commands = ascii.encode(text);
       
-      print('DEBUG: RAW TEST - Sende ${commands.length} Bytes: ${commands.join(',')}');
+      _log('RAW TEST - Sende ${commands.length} Bytes: ${commands.join(',')}');
       await printData(device, commands);
-      print('DEBUG: RAW TEST - Abgeschlossen');
+      _log('RAW TEST - Abgeschlossen');
     } finally {
       await disconnect(device);
     }

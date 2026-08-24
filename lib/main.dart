@@ -11,9 +11,7 @@ import 'package:firebase_performance/firebase_performance.dart';
 
 import 'app.dart';
 import 'state/auth_provider.dart';
-import 'state/menu_provider.dart';
 import 'state/tables_provider.dart';
-import 'state/tickets_provider.dart';
 import 'state/events_provider.dart';
 import 'state/settings_provider.dart';
 import 'util/notifications_service.dart';
@@ -133,8 +131,6 @@ Future<void> main() async {
           ChangeNotifierProvider(create: (_) => SettingsProvider()),
           ChangeNotifierProvider(create: (_) => EventsProvider()..start()),
           ChangeNotifierProvider(create: (_) => TablesProvider()),
-          ChangeNotifierProvider(create: (_) => MenuProvider()..seedDefaults()),
-          ChangeNotifierProvider(create: (_) => TicketsProvider()),
           Provider.value(value: notifications),
           Provider.value(value: FirebaseMessaging.instance),
         ],

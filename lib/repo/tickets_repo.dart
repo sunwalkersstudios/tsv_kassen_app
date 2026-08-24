@@ -661,7 +661,7 @@ class TicketsRepo {
   }
 
   /// Stream der offenen Beträge (unbezahlt) pro Tisch
-  /// Returns Map<tableId, openAmount>
+  /// Liefert `Map<tableId, openAmount>`
   Stream<Map<String, double>> streamOpenAmountsByTable() {
     return _db.collection('tickets').snapshots().asyncMap((ticketsSnap) async {
       final amountsByTable = <String, double>{};
