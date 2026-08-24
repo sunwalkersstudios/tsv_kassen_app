@@ -12,9 +12,10 @@ import 'package:tsv/models/entities.dart';
 import 'package:tsv/models/report_period.dart';
 import 'package:tsv/models/sales_summary.dart';
 import 'package:tsv/screens/cashier_screen.dart';
+import 'package:tsv/widgets/order_menu_grid.dart';
+import 'package:tsv/widgets/order_ticket_panel.dart';
 import 'package:tsv/widgets/pending_orders_view.dart';
 import 'package:tsv/screens/table_plan_screen.dart';
-import 'package:tsv/util/money.dart';
 
 // --------------------------------------------------------------- Tischplan
 
@@ -69,214 +70,65 @@ class MockTablePlan extends StatelessWidget {
 
 // ------------------------------------------------------------- Bestellung
 
+/// Zeigt die echte Bestellmaske mit Beispieldaten - kein Nachbau.
 class MockOrder extends StatelessWidget {
   const MockOrder({super.key});
 
-  static const _kategorien = ['Alle', 'Getränke', 'Speisen', 'Grillhütte'];
-  static const _artikel = [
-    ('Schnitzel', 1250, 'Speisen'),
-    ('Currywurst Pommes', 850, 'Speisen'),
-    ('Grünkohl', 1550, 'Speisen'),
-    ('Port. Pommes', 350, 'Speisen'),
-    ('Bier/Radler 0,4', 350, 'Getränke'),
-    ('Cola, Fanta 0,5', 350, 'Getränke'),
-    ('A-Schorle', 350, 'Getränke'),
-    ('Kaffee / Tee', 200, 'Getränke'),
-    ('Bratwurst', 300, 'Grillhütte'),
-    ('Nachos', 400, 'Grillhütte'),
-    ('Wein 0,2', 350, 'Getränke'),
-    ('Wasser 0,5', 300, 'Getränke'),
+  static final _karte = [
+    MenuItemEntity(id: 'm1', name: 'Schnitzel', priceCents: 1250, category: 'Speisen', route: 'kitchen'),
+    MenuItemEntity(id: 'm2', name: 'Currywurst Pommes', priceCents: 850, category: 'Speisen', route: 'kitchen'),
+    MenuItemEntity(id: 'm3', name: 'Grünkohl', priceCents: 1550, category: 'Speisen', route: 'kitchen'),
+    MenuItemEntity(id: 'm4', name: 'Port. Pommes', priceCents: 350, category: 'Speisen', route: 'kitchen'),
+    MenuItemEntity(id: 'm5', name: 'Bier/Radler 0,4', priceCents: 350, category: 'Getränke', route: 'bar'),
+    MenuItemEntity(id: 'm6', name: 'Cola, Fanta 0,5', priceCents: 350, category: 'Getränke', route: 'bar'),
+    MenuItemEntity(id: 'm7', name: 'A-Schorle', priceCents: 350, category: 'Getränke', route: 'bar'),
+    MenuItemEntity(id: 'm8', name: 'Kaffee / Tee', priceCents: 200, category: 'Getränke', route: 'bar'),
+    MenuItemEntity(id: 'm9', name: 'Wein 0,2', priceCents: 350, category: 'Getränke', route: 'bar'),
+    MenuItemEntity(id: 'm10', name: 'Bratwurst', priceCents: 300, category: 'Grillhütte', route: 'kitchen'),
+    MenuItemEntity(id: 'm11', name: 'Nachos', priceCents: 400, category: 'Grillhütte', route: 'kitchen'),
+    MenuItemEntity(id: 'm12', name: 'Wasser 0,5', priceCents: 300, category: 'Getränke', route: 'bar'),
   ];
-  static const _ticket = [
-    ('Schnitzel', 2, 2500, 'open'),
-    ('Bier/Radler 0,4', 3, 1050, 'sent'),
-    ('Port. Pommes', 1, 350, 'ready'),
+
+  static final _positionen = [
+    TicketItemEntity(id: 'i1', menuItemId: 'm1', qty: 2, route: 'kitchen', status: TicketStatus.open),
+    TicketItemEntity(id: 'i2', menuItemId: 'm5', qty: 3, route: 'bar', status: TicketStatus.sentToKitchen),
+    TicketItemEntity(id: 'i3', menuItemId: 'm4', qty: 1, route: 'kitchen', status: TicketStatus.ready),
+    TicketItemEntity(id: 'i4', menuItemId: 'm3', qty: 1, route: 'kitchen', notes: 'ohne Speck', status: TicketStatus.open),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tisch 3'),
         actions: [_Avatar(initials: 'KE', label: 'Kellner'), const SizedBox(width: 12)],
       ),
       body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Artikelauswahl als Kachelraster - schneller zu treffen als eine Liste
           Expanded(
             flex: 62,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 12, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      for (final k in _kategorien) ...[
-                        _Chip(label: k, aktiv: k == 'Alle'),
-                        const SizedBox(width: 8),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: GridView.count(
-                      crossAxisCount: 3,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 1.7,
-                      children: [
-                        for (final (name, cents, kat) in _artikel)
-                          _ItemTile(name: name, cents: cents, kategorie: kat),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            child: OrderMenuGrid(
+              artikel: _karte,
+              onKategorie: (_) {},
+              onHinzufuegen: (_) {},
+              onExtrawunsch: (_) {},
             ),
           ),
-          // Laufender Beleg
-          Expanded(
-            flex: 38,
-            child: Container(
-              decoration: BoxDecoration(
-                color: cs.surfaceContainer,
-                border: Border(left: BorderSide(color: cs.outlineVariant)),
-              ),
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('BESTELLUNG', style: t.textTheme.labelSmall),
-                  const SizedBox(height: 14),
-                  for (final (name, menge, cents, status) in _ticket) ...[
-                    _TicketLine(name: name, menge: menge, cents: cents, status: status),
-                    const SizedBox(height: 10),
-                  ],
-                  const Spacer(),
-                  Divider(color: cs.outlineVariant),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text('Summe', style: t.textTheme.titleMedium),
-                      Text(Money.format(3900), style: t.textTheme.displaySmall?.copyWith(color: cs.primary)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.send, size: 20),
-                        label: const Text('Senden'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.payments, size: 20),
-                        label: const Text('Kassieren'),
-                      ),
-                    ),
-                  ]),
-                ],
-              ),
+          SizedBox(
+            width: 380,
+            child: OrderTicketPanel(
+              positionen: _positionen,
+              karte: _karte,
+              onWeniger: (_) {},
+              onEntfernen: (_) {},
+              onServiert: (_) {},
+              onAlleServiert: () {},
+              onSenden: () {},
+              onBezahlen: () {},
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ItemTile extends StatelessWidget {
-  final String name;
-  final int cents;
-  final String kategorie;
-  const _ItemTile({required this.name, required this.cents, required this.kategorie});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-    final istGetraenk = kategorie == 'Getränke';
-    return Container(
-      decoration: BoxDecoration(
-        color: cs.surfaceContainer,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(istGetraenk ? Icons.local_bar : Icons.restaurant,
-              size: 16, color: cs.onSurfaceVariant),
-          const Spacer(),
-          Text(name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: t.textTheme.titleMedium?.copyWith(height: 1.2)),
-          const SizedBox(height: 3),
-          Text(Money.format(cents),
-              style: t.textTheme.bodyLarge?.copyWith(
-                  color: cs.primary, fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-}
-
-class _TicketLine extends StatelessWidget {
-  final String name;
-  final int menge;
-  final int cents;
-  final String status;
-  const _TicketLine({required this.name, required this.menge, required this.cents, required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-    final (farbe, wort) = switch (status) {
-      'ready' => (cs.secondary, 'fertig'),
-      'sent' => (cs.tertiary, 'in Arbeit'),
-      _ => (cs.onSurfaceVariant, 'neu'),
-    };
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: 32,
-          height: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: cs.primaryContainer,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text('$menge',
-              style: t.textTheme.titleMedium?.copyWith(color: cs.onPrimaryContainer)),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(name, style: t.textTheme.bodyLarge),
-              Text(wort,
-                  style: t.textTheme.bodySmall?.copyWith(color: farbe, fontWeight: FontWeight.w700)),
-            ],
-          ),
-        ),
-        Text(Money.format(cents), style: t.textTheme.bodyLarge),
-      ],
     );
   }
 }
@@ -407,27 +259,6 @@ class MockKitchen extends StatelessWidget {
 }
 
 // ------------------------------------------------------------- Bausteine
-
-class _Chip extends StatelessWidget {
-  final String label;
-  final bool aktiv;
-  const _Chip({required this.label, required this.aktiv});
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-      decoration: BoxDecoration(
-        color: aktiv ? cs.primary : cs.surfaceContainer,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: aktiv ? cs.primary : cs.outlineVariant),
-      ),
-      child: Text(label,
-          style: t.textTheme.labelLarge?.copyWith(color: aktiv ? cs.onPrimary : cs.onSurface)),
-    );
-  }
-}
 
 class _Avatar extends StatelessWidget {
   final String initials;
