@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../util/bluetooth_printer_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../widgets/user_menu_button.dart';
 
 class AdminScreen extends StatelessWidget {
   const AdminScreen({super.key});
@@ -9,7 +10,10 @@ class AdminScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Admin')),
+      appBar: AppBar(
+        title: const Text('Admin'),
+        actions: const [UserMenuButton()],
+      ),
       body: ListView(
         children: [
           FutureBuilder<Map<String, String>?>(

@@ -19,6 +19,7 @@ import 'state/auth_provider.dart';
 import 'state/settings_provider.dart';
 import 'models/entities.dart';
 import 'screens/unlock_screen.dart';
+import 'theme.dart';
 
 class TsvApp extends StatelessWidget {
   const TsvApp({super.key});
@@ -155,48 +156,10 @@ class TsvApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-        useMaterial3: true,
-      ),
-      builder: (context, child) {
-        // Add a simple user-switch action in a common AppBar wrapper when appropriate.
-        // We'll only show it when authenticated to allow quick role-switch testing by admin.
-        return ScaffoldMessenger(
-          child: Navigator(
-            onGenerateRoute: (settings) => MaterialPageRoute(
-              builder: (ctx) {
-                return Stack(
-                  children: [
-                    if (child != null) child,
-                    // Floating button for quick user switch
-                    if (context.read<AuthProvider>().isAuthenticated && !context.read<AuthProvider>().isLocked)
-                      SafeArea(
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: Padding(
-                            // Slight offset from the very top, centered horizontally
-                            padding: const EdgeInsets.only(top: 6),
-                            child: FloatingActionButton.small(
-                              heroTag: 'switchUserFab',
-                              tooltip: 'Nutzer wechseln',
-                              onPressed: () {
-                                // Force logout and go to login screen
-                                context.read<AuthProvider>().logout();
-                                GoRouter.of(context).go('/login');
-                              },
-                              child: const Icon(Icons.switch_account),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-        );
-      },
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      // Folgt der Systemeinstellung des Tablets: abends dunkel, tagsueber hell.
+      themeMode: ThemeMode.system,
       routerConfig: router,
     );
   }

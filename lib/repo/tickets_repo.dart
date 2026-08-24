@@ -119,6 +119,35 @@ class TicketsRepo {
     String notes = '',
   }) async {
     final parent = _db.collection('tickets').doc(ticketId);
+
+    // Gleichen Artikel buendeln statt eine neue Zeile anzulegen.
+    //
+    // Zusammengefasst wird nur, was noch nicht an Kueche oder Bar geschickt
+    // wurde und denselben Hinweis traegt: eine bereits abgeschickte Runde
+    // nachtraeglich hochzuzaehlen wuerde die Kueche verwirren, und "ohne
+    // Zwiebeln" ist eine andere Position als dasselbe Gericht ohne Hinweis.
+    //
+    // Abgefragt wird nur nach menuItemId - ein einzelnes Feld, das Firestore
+    // von sich aus indiziert. Status und Hinweis werden lokal geprueft; ein
+    // Ticket hat hoechstens ein paar Dutzend Positionen.
+    final gleiche = await parent
+        .collection('items')
+        .where('menuItemId', isEqualTo: menuItemId)
+        .get();
+    for (final d in gleiche.docs) {
+      final m = d.data();
+      final offen = ((m['status'] as String?) ?? 'open') == 'open';
+      final gleicherHinweis = ((m['notes'] as String?) ?? '') == notes;
+      if (offen && gleicherHinweis) {
+        await d.reference.update({
+          'qty': FieldValue.increment(qty),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        await parent.set({'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+        return;
+      }
+    }
+
     await parent.collection('items').add({
       'menuItemId': menuItemId,
       'qty': qty,
@@ -133,6 +162,25 @@ class TicketsRepo {
     });
     // bump ticket updatedAt for deterministic reuse
     await parent.set({'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+  }
+
+  /// Aendert die Menge einer Position um [delta].
+  /// Faellt sie auf null oder darunter, wird die Position entfernt.
+  Future<void> changeItemQty({
+    required String ticketId,
+    required String itemId,
+    required int delta,
+  }) async {
+    final ref = _db.collection('tickets').doc(ticketId).collection('items').doc(itemId);
+    final snap = await ref.get();
+    if (!snap.exists) return;
+    final aktuell = (snap.data()?['qty'] as num?)?.toInt() ?? 1;
+    final neu = aktuell + delta;
+    if (neu <= 0) {
+      await ref.delete();
+      return;
+    }
+    await ref.update({'qty': neu, 'updatedAt': FieldValue.serverTimestamp()});
   }
 
   Future<void> deleteItem({required String ticketId, required String itemId}) async {

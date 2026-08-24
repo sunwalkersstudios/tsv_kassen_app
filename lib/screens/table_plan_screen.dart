@@ -6,6 +6,7 @@ import '../state/auth_provider.dart';
 // tickets_repo is already imported above
 import '../state/settings_provider.dart';
 import '../repo/tickets_repo.dart';
+import '../widgets/user_menu_button.dart';
 
 class TablePlanScreen extends StatelessWidget {
   const TablePlanScreen({super.key});
@@ -17,7 +18,10 @@ class TablePlanScreen extends StatelessWidget {
     final merged = context.watch<SettingsProvider>().mergeKitchenBar;
     final ticketsRepo = TicketsRepo();
     return Scaffold(
-      appBar: AppBar(title: const Text('Tischplan')),
+      appBar: AppBar(
+        title: const Text('Tischplan'),
+        actions: const [UserMenuButton()],
+      ),
       body: auth.user == null
           ? const Center(child: Text('Bitte anmelden'))
           : StreamBuilder<Map<String, double>>(

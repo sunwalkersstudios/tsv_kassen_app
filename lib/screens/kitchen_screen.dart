@@ -6,6 +6,7 @@ import '../state/tables_provider.dart';
 import '../repo/tickets_repo.dart';
 import '../repo/settings_repo.dart';
 import '../state/events_provider.dart';
+import '../widgets/user_menu_button.dart';
 
 class KitchenScreen extends StatelessWidget {
   const KitchenScreen({super.key});
@@ -17,7 +18,10 @@ class KitchenScreen extends StatelessWidget {
     final ticketsRepo = TicketsRepo();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Küche')),
+      appBar: AppBar(
+        title: const Text('Küche'),
+        actions: const [UserMenuButton()],
+      ),
       body: StreamBuilder<Map<String, dynamic>>(
         stream: SettingsRepo().streamOrgSettings(),
         builder: (context, tSnap) {

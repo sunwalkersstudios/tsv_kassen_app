@@ -320,8 +320,22 @@ class _OrderScreenState extends State<OrderScreen> {
                                         children: [
                                           if (i.status == TicketStatus.open)
                                             IconButton(
+                                              icon: const Icon(Icons.remove_circle_outline),
+                                              tooltip: i.qty > 1
+                                                  ? 'Eine weniger'
+                                                  : 'Position entfernen',
+                                              onPressed: () async {
+                                                await ticketsRepo.changeItemQty(
+                                                  ticketId: _ticketId!,
+                                                  itemId: i.id,
+                                                  delta: -1,
+                                                );
+                                              },
+                                            ),
+                                          if (i.status == TicketStatus.open && i.qty > 1)
+                                            IconButton(
                                               icon: const Icon(Icons.delete_outline),
-                                              tooltip: 'Position entfernen',
+                                              tooltip: 'Ganze Position entfernen',
                                               onPressed: () async {
                                                 await ticketsRepo.deleteItem(ticketId: _ticketId!, itemId: i.id);
                                               },
