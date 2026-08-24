@@ -108,6 +108,8 @@ void main() {
   testWidgets('Tischplan dunkel', (t) => zeichne(t, 'tischplan', const MockTablePlan(), Brightness.dark));
   testWidgets('Bestellung hell', (t) => zeichne(t, 'bestellung', const MockOrder(), Brightness.light));
   testWidgets('Bestellung dunkel', (t) => zeichne(t, 'bestellung', const MockOrder(), Brightness.dark));
+  testWidgets('Küche hell', (t) => zeichne(t, 'kueche', const MockKitchen(), Brightness.light));
+  testWidgets('Küche dunkel', (t) => zeichne(t, 'kueche', const MockKitchen(), Brightness.dark));
   testWidgets('Kasse hell', (t) => zeichne(t, 'kasse', const MockCashier(), Brightness.light));
   testWidgets('Kasse dunkel', (t) => zeichne(t, 'kasse', const MockCashier(), Brightness.dark));
 }

@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/entities.dart';
-import '../repo/menu_repo.dart';
-import '../state/tables_provider.dart';
+
 import '../repo/tickets_repo.dart';
-import '../repo/settings_repo.dart';
-import '../state/events_provider.dart';
+import '../state/tables_provider.dart';
+import '../widgets/pending_orders_view.dart';
 import '../widgets/user_menu_button.dart';
 
+/// Baransicht: offene Positionen der Route 'bar' als Bon-Karten.
+///
+/// Teilt die Darstellung mit der Kueche - siehe [PendingOrdersView].
+///
+/// Die frueher hier eingebaute Weiterleitung bei zusammengelegter Kueche und
+/// Bar ist entfallen: sie benutzte `Navigator.pushReplacementNamed`, das mit
+/// go_router nicht zusammenpasst, und der Router leitet diesen Fall ohnehin
+/// bereits um (siehe app.dart).
 class BarScreen extends StatelessWidget {
   const BarScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final menuRepo = MenuRepo();
     final tables = context.watch<TablesProvider>().tables;
     final ticketsRepo = TicketsRepo();
 
@@ -22,116 +27,28 @@ class BarScreen extends StatelessWidget {
         title: const Text('Bar'),
         actions: const [UserMenuButton()],
       ),
-      body: StreamBuilder<Map<String, dynamic>>(
-        stream: SettingsRepo().streamOrgSettings(),
-        builder: (context, tSnap) {
-          final merged = (tSnap.data ?? const {})['mergeKitchenBar'] == true;
-          // If merged, redirect away from bar screen entirely
-          if (merged) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) Navigator.of(context).pushReplacementNamed('/kitchen');
-            });
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: ticketsRepo.streamPendingForRoute('bar'),
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('Bestellungen konnten nicht geladen werden.\n${snap.error}',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium),
+              ),
+            );
+          }
+          if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final itemsStream = merged
-              ? ticketsRepo.streamPendingMerged()
-              : ticketsRepo.streamPendingForRoute('bar');
-          return StreamBuilder(
-            stream: itemsStream,
-            builder: (context, itemsSnap) {
-              if (itemsSnap.hasError) {
-                return Center(child: Text('Fehler: ${itemsSnap.error}'));
-              }
-              final pendingRaw = itemsSnap.data;
-              final List<Map<String, dynamic>> pending = (pendingRaw is List)
-                  ? (pendingRaw as List).map((e) => (e as Map).cast<String, dynamic>()).toList()
-                  : <Map<String, dynamic>>[];
-              if (pending.isEmpty) {
-                return Center(child: Text(merged ? 'Keine offenen Bestellungen' : 'Keine offenen Bestellungen für die Bar'));
-              }
-              final byTicket = <String, List<Map<String, dynamic>>>{};
-              for (final p in pending) {
-                byTicket.putIfAbsent(p['ticketId'] as String, () => []).add(p);
-              }
-              final activeEventId = context.watch<EventsProvider>().activeEvent?.id;
-              return StreamBuilder(
-                stream: menuRepo.streamForService(activeEventId: activeEventId),
-                builder: (context, mSnap) {
-                  if (mSnap.hasError) {
-                    return Center(child: Text('Fehler im Menü: ${mSnap.error}'));
-                  }
-                  final menu = mSnap.data ?? const [];
-                  return ListView(
-                    children: [
-                      for (final entry in byTicket.entries)
-                        Card(
-                          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                FutureBuilder<String?>(
-                                  future: () async {
-                                    final name = await TicketsRepo().getTicketTableName(entry.key);
-                                    if (name != null && name.isNotEmpty) return name;
-                                    final first = entry.value.first;
-                                    final itemTableId = (first['tableId'] as String?) ?? '';
-                                    final effectiveId = itemTableId.isNotEmpty
-                                        ? itemTableId
-                                        : await TicketsRepo().getTicketTableId(entry.key) ?? '';
-                                    final tableName = tables.firstWhere(
-                                      (tb) => tb.id == effectiveId,
-                                      orElse: () => TableEntity(id: '', name: 'Unbekannt', row: 0, col: 0),
-                                    ).name;
-                                    return tableName;
-                                  }(),
-                                  builder: (context, tSnap) {
-                                    final tableName = (tSnap.data ?? 'Tisch unbekannt');
-                                    return Text(
-                                      tableName.isEmpty ? 'Tisch unbekannt' : tableName,
-                                      style: const TextStyle(fontWeight: FontWeight.bold),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 6),
-                                ...entry.value.map((p) {
-                                  final menuItemId = (p['menuItemId'] ?? '').toString();
-                                  final dnName = (p['name'] as String?)?.trim();
-                                  final qty = (p['qty'] as int?) ?? 1;
-                                  final status = (p['status'] ?? '').toString();
-                                  final route = (p['route'] ?? '').toString();
-                                  String? nameToShow = dnName?.isNotEmpty == true ? dnName : null;
-                                  if (nameToShow == null) {
-                                    final idx = menu.indexWhere((m) => m.id == menuItemId);
-                                    if (idx != -1) nameToShow = menu[idx].name;
-                                  }
-                                  nameToShow ??= 'Unbekannt ($menuItemId)';
-                                  return ListTile(
-                                    dense: true,
-                                    contentPadding: EdgeInsets.zero,
-                                    title: Text('$nameToShow x$qty'),
-                                    subtitle: Text(
-                                      'Status: $status${route.isNotEmpty ? ' • Route: $route' : ''}${(p['notes'] as String?)?.isNotEmpty == true ? ' • Hinweis: ${p['notes']}' : ''}',
-                                    ),
-                                  );
-                                }),
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: ElevatedButton(
-                                    onPressed: () => ticketsRepo.markRouteReady(entry.key, merged ? 'kitchen' : 'bar'),
-                                    child: const Text('Fertig'),
-                                  ),
-                                )
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              );
-            },
+          return PendingOrdersView(
+            positionen: snap.data!,
+            tische: tables,
+            route: 'bar',
+            onItemFertig: ticketsRepo.markItemReady,
+            onTicketFertig: (ticketId) => ticketsRepo.markRouteReady(ticketId, 'bar'),
           );
         },
       ),

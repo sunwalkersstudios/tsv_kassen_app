@@ -657,6 +657,8 @@ class TicketsRepo {
                 'itemId': d.id,
                 'name': name,
                 'notes': notes,
+                // Fuer die Wartezeitanzeige in Kueche und Bar
+                'createdAt': data['createdAt'],
               };
             }).where((m) => m['status'] == 'open' || m['status'] == 'sentToKitchen').toList());
   }
@@ -686,6 +688,8 @@ class TicketsRepo {
                 'itemId': d.id,
                 'name': name,
                 'notes': notes,
+                // Fuer die Wartezeitanzeige in Kueche und Bar
+                'createdAt': data['createdAt'],
               };
             })
             .where((m) {

@@ -12,6 +12,7 @@ import 'package:tsv/models/entities.dart';
 import 'package:tsv/models/report_period.dart';
 import 'package:tsv/models/sales_summary.dart';
 import 'package:tsv/screens/cashier_screen.dart';
+import 'package:tsv/widgets/pending_orders_view.dart';
 import 'package:tsv/screens/table_plan_screen.dart';
 import 'package:tsv/util/money.dart';
 
@@ -327,6 +328,12 @@ class MockCashier extends StatelessWidget {
         actions: [_Avatar(initials: 'AD', label: 'Admin'), const SizedBox(width: 12)],
       ),
       body: CashierBody(
+        onPeriod: (_) {},
+        onPickDate: () {},
+        onEditCashDay: (_) {},
+        onExport: (_) {},
+        onResetDay: (_) {},
+        onPrintDay: () {},
         period: ReportPeriod(PeriodKind.day, DateTime(2025, 10, 22)),
         summary: summary,
         cashDays: const {'2025-10-22': kassentag},
@@ -334,6 +341,66 @@ class MockCashier extends StatelessWidget {
         deposit: kassentag.depositCents,
         withdrawal: kassentag.withdrawalCents,
         drawer: drawer,
+      ),
+    );
+  }
+}
+
+
+// ------------------------------------------------------------------ Kueche
+
+/// Zeigt die echte Kuechenansicht mit Beispieldaten - kein Nachbau.
+class MockKitchen extends StatelessWidget {
+  const MockKitchen({super.key});
+
+  /// Fester Bezugszeitpunkt, damit die Wartezeiten in den Bildern
+  /// reproduzierbar bleiben.
+  static final _jetzt = DateTime(2025, 10, 22, 19, 30);
+
+  static Map<String, dynamic> _pos(
+      String ticket, String tisch, String name, int qty, int vorMinuten,
+      {String notes = '', String route = 'kitchen', String status = 'sentToKitchen'}) {
+    return {
+      'ticketId': ticket,
+      'tableId': tisch,
+      'itemId': '$ticket-$name',
+      'name': name,
+      'qty': qty,
+      'notes': notes,
+      'route': route,
+      'status': status,
+      'createdAt': _jetzt.subtract(Duration(minutes: vorMinuten)),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Küche'),
+        actions: [_Avatar(initials: 'KÜ', label: 'Küche'), const SizedBox(width: 12)],
+      ),
+      body: PendingOrdersView(
+        route: 'kitchen',
+        jetzt: _jetzt,
+        // Leere Rueckrufe: ohne sie zeichnet Flutter die Schaltflaechen als
+        // deaktiviert, und das Bild zeigte einen Zustand, den es im Betrieb
+        // nicht gibt.
+        onItemFertig: (_, __) {},
+        onTicketFertig: (_) {},
+        tische: [
+          TableEntity(id: 't3', name: 'Tisch 3', row: 0, col: 0),
+          TableEntity(id: 't5', name: 'Tisch 5', row: 0, col: 1),
+          TableEntity(id: 't8', name: 'Tisch 8', row: 0, col: 2),
+        ],
+        positionen: [
+          _pos('a', 't8', 'Schnitzel', 4, 28),
+          _pos('a', 't8', 'Grünkohl', 2, 28, notes: 'einmal ohne Speck'),
+          _pos('a', 't8', 'Port. Pommes', 3, 28, status: 'ready'),
+          _pos('b', 't3', 'Currywurst Pommes', 2, 17),
+          _pos('b', 't3', 'Schnitzel', 1, 17, notes: 'gut durch'),
+          _pos('c', 't5', 'Grünkohl', 1, 4),
+        ],
       ),
     );
   }
