@@ -20,14 +20,18 @@ class TableEntity {
 class MenuItemEntity {
   final String id;
   String name;
-  double price;
-  String category; // e.g. food/drink
+
+  /// Preis in ganzzahligen Cent. Fliesskomma waere hier die falsche Grundlage:
+  /// die Fehler summieren sich ueber die Positionen eines Belegs auf.
+  int priceCents;
+
+  String category; // Speisen / Getraenke / ...
   String route; // kitchen/bar
-  String? eventId; // null => base menu, else event-specific
+  String? eventId; // null => Basiskarte, sonst veranstaltungsbezogen
   MenuItemEntity({
     required this.id,
     required this.name,
-    required this.price,
+    required this.priceCents,
     required this.category,
     required this.route,
     this.eventId,

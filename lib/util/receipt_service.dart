@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'bluetooth_printer_service.dart';
+import 'money.dart';
+import '../repo/cash_day_repo.dart';
 
 class ReceiptService {
   final _db = FirebaseFirestore.instance;
@@ -277,30 +279,30 @@ class ReceiptService {
       for (final it in items) {
         final name = (it['name'] ?? it['menuItemId']).toString();
         final qty = (it['qty'] as num?)?.toInt() ?? 0;
-        final price = (it['price'] as num?)?.toDouble() ?? 0.0;
-        final totalLine = (it['lineTotal'] as num?)?.toDouble() ?? (price * qty);
+        final priceCents = Money.itemPrice(it);
+        final totalLineCents = Money.itemLineTotal(it);
         if (grouped.containsKey(name)) {
           grouped[name]!['qty'] = (grouped[name]!['qty'] as int) + qty;
-          grouped[name]!['lineTotal'] = (grouped[name]!['lineTotal'] as double) + totalLine;
+          grouped[name]!['lineTotalCents'] = (grouped[name]!['lineTotalCents'] as int) + totalLineCents;
         } else {
-          grouped[name] = {'qty': qty, 'price': price, 'lineTotal': totalLine};
+          grouped[name] = {'qty': qty, 'priceCents': priceCents, 'lineTotalCents': totalLineCents};
         }
       }
       for (final entry in grouped.entries) {
         final name = entry.key;
         final qty = entry.value['qty'] as int;
-        final price = entry.value['price'] as double;
-        final totalLine = entry.value['lineTotal'] as double;
+        final priceCents = entry.value['priceCents'] as int;
+        final totalLineCents = entry.value['lineTotalCents'] as int;
         final line = tpls['item']!
             .replaceAll('{qty}', qty.toString())
             .replaceAll('{name}', name)
-            .replaceAll('{price}', price.toStringAsFixed(2))
-            .replaceAll('{lineTotal}', totalLine.toStringAsFixed(2));
-        final amt = '${totalLine.toStringAsFixed(2)} EUR';
+            .replaceAll('{price}', Money.plain(priceCents))
+            .replaceAll('{lineTotal}', Money.plain(totalLineCents));
+        final amt = '${Money.plain(totalLineCents)} EUR';
         _addLeftRightStr(sb, line, amt, cols);
       }
       final footer = _replaceVars(tpls['footer']!, {
-        'total': ((s['total'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(2),
+        'total': Money.plain(Money.saleTotal(s)),
         'payment': (s['paymentMethod'] ?? 'Bar').toString(),
       }, cols);
       // In footer we also keep alignment for SUMME if template uses it implicitly
@@ -308,7 +310,7 @@ class ReceiptService {
       for (final line in footer.split('\n')) {
         if (line.contains('SUMME:') && line.contains('{space}')) {
           // legacy support; already handled in template replacement above
-          final total = '${((s['total'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(2)} EUR';
+          final total = '${Money.plain(Money.saleTotal(s))} EUR';
           _addLeftRightStr(sb, 'SUMME:', total, cols);
         } else {
           sb.writeln(line);
@@ -337,26 +339,26 @@ class ReceiptService {
       for (final it in items) {
         final name = (it['name'] ?? it['menuItemId']).toString();
         final qty = (it['qty'] as num?)?.toInt() ?? 0;
-        final price = (it['price'] as num?)?.toDouble() ?? 0.0;
-        final totalLine = (it['lineTotal'] as num?)?.toDouble() ?? (price * qty);
+        final priceCents = Money.itemPrice(it);
+        final totalLineCents = Money.itemLineTotal(it);
         if (grouped.containsKey(name)) {
           grouped[name]!['qty'] = (grouped[name]!['qty'] as int) + qty;
-          grouped[name]!['lineTotal'] = (grouped[name]!['lineTotal'] as double) + totalLine;
+          grouped[name]!['lineTotalCents'] = (grouped[name]!['lineTotalCents'] as int) + totalLineCents;
         } else {
-          grouped[name] = {'qty': qty, 'price': price, 'lineTotal': totalLine};
+          grouped[name] = {'qty': qty, 'priceCents': priceCents, 'lineTotalCents': totalLineCents};
         }
       }
       for (final entry in grouped.entries) {
         final name = entry.key;
         final qty = entry.value['qty'] as int;
-        final totalLine = entry.value['lineTotal'] as double;
+        final totalLineCents = entry.value['lineTotalCents'] as int;
         final line = '${qty}x $name';
-        final amt = '${totalLine.toStringAsFixed(2)} EUR';
+        final amt = '${Money.plain(totalLineCents)} EUR';
         _addLeftRight(esc, line, amt, cols);
       }
       esc.addAll(_hr(cols));
-      final total = (s['total'] as num?)?.toDouble() ?? 0.0;
-      _addLeftRight(esc, 'SUMME:', '${total.toStringAsFixed(2)} EUR', cols);
+      final totalCents = Money.saleTotal(s);
+      _addLeftRight(esc, 'SUMME:', '${Money.plain(totalCents)} EUR', cols);
       esc.addAll(_text('Zahlung: Bar'));
       esc.addAll(_text(''));
       esc.addAll([29, 86, 66, 0]); // cut
@@ -406,7 +408,7 @@ class ReceiptService {
     }
     if (s == null) throw Exception('Kein Verkaufsbeleg gefunden');
 
-  final total = (s['total'] as num?)?.toDouble() ?? 0.0;
+  final totalCents = Money.saleTotal(s);
     final paidAt = (s['paidAt'] as Timestamp?)?.toDate();
     final ts = paidAt?.toString() ?? DateTime.now().toString();
 
@@ -415,11 +417,11 @@ class ReceiptService {
       final sb = StringBuffer();
       final body = _replaceVars(tpls['hospitality']!, {
         'date': ts,
-        'total': total.toStringAsFixed(2),
+        'total': Money.plain(totalCents),
       }, cols);
       for (final line in body.split('\n')) {
         if (line.contains('Summe:') && line.contains('{space}')) {
-          _addLeftRightStr(sb, 'Summe:', '${total.toStringAsFixed(2)} EUR', cols);
+          _addLeftRightStr(sb, 'Summe:', '${Money.plain(totalCents)} EUR', cols);
         } else {
           sb.writeln(line);
         }
@@ -441,7 +443,7 @@ class ReceiptService {
       esc.addAll(latin1.encode('Bewirtete Personen: __________\n'));
       esc.addAll(latin1.encode('Anlass/Grund: _______________\n'));
       esc.addAll(_hr(cols));
-      _addLeftRight(esc, 'Summe:', '${total.toStringAsFixed(2)} EUR', cols);
+      _addLeftRight(esc, 'Summe:', '${Money.plain(totalCents)} EUR', cols);
       esc.addAll(latin1.encode('Hinweis: Kein Ausweis der Umsatzsteuer\n'));
       esc.addAll(latin1.encode('gemäß § 19 UStG (Kleinunternehmerregelung).\n'));
       esc.addAll(latin1.encode('\n'));
@@ -516,63 +518,67 @@ class ReceiptService {
     final sales = snap.docs.map((d) => d.data()).toList();
 
     // Aggregate
-    final perItem = <String, Map<String, dynamic>>{}; // name -> {qty,total}
-    double grandTotal = 0.0;
-    double cashTotal = 0.0;
-    double cardTotal = 0.0;
+    final perItem = <String, Map<String, dynamic>>{}; // Name -> {qty, totalCents}
+    int grandTotalCents = 0;
+    int cashTotalCents = 0;
+    int cardTotalCents = 0;
     for (final s in sales) {
       final items = (s['items'] as List?) ?? const [];
       final pm = (s['paymentMethod'] ?? 'cash').toString();
-      final saleTotal = (s['total'] as num?)?.toDouble() ?? 0.0;
-      grandTotal += saleTotal;
+      final saleTotalCents = Money.saleTotal(s);
+      grandTotalCents += saleTotalCents;
       if (pm == 'cash') {
-        cashTotal += saleTotal;
+        cashTotalCents += saleTotalCents;
       } else {
-        cardTotal += saleTotal;
+        cardTotalCents += saleTotalCents;
       }
       for (final it in items) {
         final name = (it['name'] ?? it['menuItemId']).toString();
         final qty = (it['qty'] as num?)?.toInt() ?? 0;
-        final lineTotal = (it['lineTotal'] as num?)?.toDouble() ?? 0.0;
-        final entry = perItem.putIfAbsent(name, () => {'qty': 0, 'total': 0.0});
+        final lineTotalCents = Money.itemLineTotal(it);
+        final entry = perItem.putIfAbsent(name, () => {'qty': 0, 'totalCents': 0});
         entry['qty'] = (entry['qty'] as int) + qty;
-        entry['total'] = ((entry['total'] as double) + lineTotal);
+        entry['totalCents'] = (entry['totalCents'] as int) + lineTotalCents;
       }
     }
 
     // Opening cash and adjustments
-    double openingCash = 0.0;
-    double deposit = 0.0;
-    double withdrawal = 0.0;
+    // Aus Firestore, nicht mehr aus SharedPreferences: seit die Kassenwerte
+    // in cashDays liegen, haette der gedruckte Abschluss sonst 0,00 gezeigt,
+    // waehrend die App die richtigen Werte anzeigt.
+    int openingCents = 0;
+    int depositCents = 0;
+    int withdrawalCents = 0;
     try {
-      final sp = await SharedPreferences.getInstance();
-      openingCash = sp.getDouble('openingCash:$day') ?? 0.0;
-      deposit = sp.getDouble('cashDeposit:$day') ?? 0.0;
-      withdrawal = sp.getDouble('cashWithdrawal:$day') ?? 0.0;
-    } catch (_) {}
-    final cashInDrawer = openingCash + cashTotal + deposit - withdrawal;
+      final cashDay = await CashDayRepo().fetchDay(day);
+      openingCents = cashDay.openingCents;
+      depositCents = cashDay.depositCents;
+      withdrawalCents = cashDay.withdrawalCents;
+    } catch (_) {/* ohne Kassenwerte drucken ist besser als gar nicht */}
+    final cashInDrawerCents =
+        openingCents + cashTotalCents + depositCents - withdrawalCents;
 
     if (mode == 'plain') {
       final sb = StringBuffer();
       sb.writeln('Tagesabschluss $day');
       sb.writeln('-' * cols);
-      _addLeftRightStr(sb, 'Umsatz gesamt:', '${grandTotal.toStringAsFixed(2)} EUR', cols);
-      _addLeftRightStr(sb, 'Bar:', '${cashTotal.toStringAsFixed(2)} EUR', cols);
-      _addLeftRightStr(sb, 'Karte:', '${cardTotal.toStringAsFixed(2)} EUR', cols);
+      _addLeftRightStr(sb, 'Umsatz gesamt:', '${Money.plain(grandTotalCents)} EUR', cols);
+      _addLeftRightStr(sb, 'Bar:', '${Money.plain(cashTotalCents)} EUR', cols);
+      _addLeftRightStr(sb, 'Karte:', '${Money.plain(cardTotalCents)} EUR', cols);
       sb.writeln('');
-      _addLeftRightStr(sb, 'Kassenstart:', '${openingCash.toStringAsFixed(2)} EUR', cols);
-  _addLeftRightStr(sb, 'Einlagen:', '${deposit.toStringAsFixed(2)} EUR', cols);
-  _addLeftRightStr(sb, 'Entnahmen:', '${withdrawal.toStringAsFixed(2)} EUR', cols);
-  _addLeftRightStr(sb, 'Kasseninhalt:', '${cashInDrawer.toStringAsFixed(2)} EUR', cols);
+      _addLeftRightStr(sb, 'Kassenstart:', '${Money.plain(openingCents)} EUR', cols);
+  _addLeftRightStr(sb, 'Einlagen:', '${Money.plain(depositCents)} EUR', cols);
+  _addLeftRightStr(sb, 'Entnahmen:', '${Money.plain(withdrawalCents)} EUR', cols);
+  _addLeftRightStr(sb, 'Kasseninhalt:', '${Money.plain(cashInDrawerCents)} EUR', cols);
       sb.writeln('-' * cols);
       sb.writeln('Verkäufe je Artikel');
       final sorted = perItem.entries.toList()
-        ..sort((a, b) => (b.value['total'] as double).compareTo(a.value['total'] as double));
+        ..sort((a, b) => (b.value['totalCents'] as int).compareTo(a.value['totalCents'] as int));
       for (final e in sorted) {
         final name = e.key;
         final qty = e.value['qty'] as int;
-        final total = (e.value['total'] as double);
-        _addLeftRightStr(sb, '$name  ${qty}x', '${total.toStringAsFixed(2)} EUR', cols);
+        final totalCents = (e.value['totalCents'] as int);
+        _addLeftRightStr(sb, '$name  ${qty}x', '${Money.plain(totalCents)} EUR', cols);
       }
       sb.writeln('');
       final bytes = latin1.encode(sb.toString().replaceAll('\n', '\r\n'));
@@ -586,23 +592,23 @@ class ReceiptService {
       esc.addAll(latin1.encode('Tagesabschluss $day\n'));
       esc.addAll([27, 97, 0]);
       esc.addAll(_hr(cols));
-      _addLeftRight(esc, 'Umsatz gesamt:', '${grandTotal.toStringAsFixed(2)} EUR', cols);
-      _addLeftRight(esc, 'Bar:', '${cashTotal.toStringAsFixed(2)} EUR', cols);
-      _addLeftRight(esc, 'Karte:', '${cardTotal.toStringAsFixed(2)} EUR', cols);
+      _addLeftRight(esc, 'Umsatz gesamt:', '${Money.plain(grandTotalCents)} EUR', cols);
+      _addLeftRight(esc, 'Bar:', '${Money.plain(cashTotalCents)} EUR', cols);
+      _addLeftRight(esc, 'Karte:', '${Money.plain(cardTotalCents)} EUR', cols);
       esc.addAll(_text(''));
-      _addLeftRight(esc, 'Kassenstart:', '${openingCash.toStringAsFixed(2)} EUR', cols);
-  _addLeftRight(esc, 'Einlagen:', '${deposit.toStringAsFixed(2)} EUR', cols);
-  _addLeftRight(esc, 'Entnahmen:', '${withdrawal.toStringAsFixed(2)} EUR', cols);
-  _addLeftRight(esc, 'Kasseninhalt:', '${cashInDrawer.toStringAsFixed(2)} EUR', cols);
+      _addLeftRight(esc, 'Kassenstart:', '${Money.plain(openingCents)} EUR', cols);
+  _addLeftRight(esc, 'Einlagen:', '${Money.plain(depositCents)} EUR', cols);
+  _addLeftRight(esc, 'Entnahmen:', '${Money.plain(withdrawalCents)} EUR', cols);
+  _addLeftRight(esc, 'Kasseninhalt:', '${Money.plain(cashInDrawerCents)} EUR', cols);
       esc.addAll(_hr(cols));
       esc.addAll(_text('Verkäufe je Artikel'));
       final sorted = perItem.entries.toList()
-        ..sort((a, b) => (b.value['total'] as double).compareTo(a.value['total'] as double));
+        ..sort((a, b) => (b.value['totalCents'] as int).compareTo(a.value['totalCents'] as int));
       for (final e in sorted) {
         final name = e.key;
         final qty = e.value['qty'] as int;
-        final total = (e.value['total'] as double);
-        _addLeftRight(esc, '$name  ${qty}x', '${total.toStringAsFixed(2)} EUR', cols);
+        final totalCents = (e.value['totalCents'] as int);
+        _addLeftRight(esc, '$name  ${qty}x', '${Money.plain(totalCents)} EUR', cols);
       }
       esc.addAll(_text(''));
       esc.addAll([29, 86, 66, 0]); // cut
@@ -642,7 +648,7 @@ class ReceiptService {
     final tableName = ((s['tableName'] ?? s['tableId']) ?? '').toString();
     final paidAt = (s['paidAt'] as Timestamp?)?.toDate();
     final ts = paidAt?.toString() ?? '';
-    final total = (s['total'] as num?)?.toDouble() ?? 0.0;
+    final totalCents = Money.saleTotal(s);
     final payment = (s['paymentMethod'] ?? 'Bar').toString();
 
     // Lade Bluetooth-Thermodrucker Vorlagen
@@ -665,33 +671,33 @@ class ReceiptService {
     for (final it in items) {
       final name = (it['name'] ?? it['menuItemId']).toString();
       final qty = (it['qty'] as num?)?.toInt() ?? 0;
-      final price = (it['price'] as num?)?.toDouble() ?? 0.0;
-      final totalLine = (it['lineTotal'] as num?)?.toDouble() ?? (price * qty);
+      final priceCents = Money.itemPrice(it);
+      final totalLineCents = Money.itemLineTotal(it);
       if (grouped.containsKey(name)) {
         grouped[name]!['qty'] = (grouped[name]!['qty'] as int) + qty;
-        grouped[name]!['lineTotal'] = (grouped[name]!['lineTotal'] as double) + totalLine;
+        grouped[name]!['lineTotalCents'] = (grouped[name]!['lineTotalCents'] as int) + totalLineCents;
       } else {
-        grouped[name] = {'qty': qty, 'price': price, 'lineTotal': totalLine};
+        grouped[name] = {'qty': qty, 'priceCents': priceCents, 'lineTotalCents': totalLineCents};
       }
     }
     for (final entry in grouped.entries) {
       final name = entry.key;
       final qty = entry.value['qty'] as int;
-      final price = entry.value['price'] as double;
-      final totalLine = entry.value['lineTotal'] as double;
+      final priceCents = entry.value['priceCents'] as int;
+      final totalLineCents = entry.value['lineTotalCents'] as int;
       final line = tpls['item']!
           .replaceAll('{qty}', qty.toString())
           .replaceAll('{name}', name)
-          .replaceAll('{price}', price.toStringAsFixed(2))
-          .replaceAll('{lineTotal}', totalLine.toStringAsFixed(2));
-      final amt = totalLine.toStringAsFixed(2);
+          .replaceAll('{price}', Money.plain(priceCents))
+          .replaceAll('{lineTotal}', Money.plain(totalLineCents));
+      final amt = Money.plain(totalLineCents);
       // Direkt encodieren statt createLeftRightText (weil Offset schon im Template ist)
       commands.addAll(latin1.encode('$line $amt\n'));
     }
     
     // Footer
     final footer = _replaceVars(tpls['footer']!, {
-      'total': total.toStringAsFixed(2),
+      'total': Money.plain(totalCents),
       'payment': payment,
     }, cols);
     commands.addAll(latin1.encode(footer));
@@ -731,7 +737,7 @@ class ReceiptService {
     }
     if (s == null) throw Exception('Kein Verkaufsbeleg gefunden');
     
-    final total = (s['total'] as num?)?.toDouble() ?? 0.0;
+    final totalCents = Money.saleTotal(s);
     final paidAt = (s['paidAt'] as Timestamp?)?.toDate();
     final ts = paidAt?.toString() ?? DateTime.now().toString();
 
@@ -743,7 +749,7 @@ class ReceiptService {
     
     final body = _replaceVars(tpls['hospitality']!, {
       'date': ts,
-      'total': total.toStringAsFixed(2),
+      'total': Money.plain(totalCents),
     }, cols);
     commands.addAll(latin1.encode(body));
     

@@ -8,6 +8,7 @@ import '../repo/tickets_repo.dart';
 import '../state/tables_provider.dart';
 import '../models/entities.dart';
 import '../util/receipt_service.dart';
+import '../util/money.dart';
 
 class OrderScreen extends StatefulWidget {
   final String tableId;
@@ -154,7 +155,7 @@ class _OrderScreenState extends State<OrderScreen> {
 
                       Widget itemTile(MenuItemEntity m) {
                         return ListTile(
-                          title: Text('${m.name} - €${m.price.toStringAsFixed(2)}'),
+                          title: Text('${m.name} — ${Money.format(m.priceCents)}'),
                           subtitle: Text('${m.category} • Route: ${m.route}'),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -187,7 +188,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                       qty: 1,
                                       route: m.route,
                                       name: m.name,
-                                      price: m.price,
+                                      priceCents: m.priceCents,
                                       category: m.category,
                                       notes: notesCtrl.text.trim(),
                                     );
@@ -205,7 +206,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                     qty: 1,
                                     route: m.route,
                                     name: m.name,
-                                    price: m.price,
+                                    priceCents: m.priceCents,
                                     category: m.category,
                                   );
                                 },
@@ -310,7 +311,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                       : null;
                                     return ListTile(
                                       tileColor: tileColor,
-                                      title: Text('${menuItem.name} x${i.qty} - €${(menuItem.price * i.qty).toStringAsFixed(2)}'),
+                                      title: Text('${menuItem.name} ×${i.qty} — ${Money.format(menuItem.priceCents * i.qty)}'),
                                       titleTextStyle: titleColor != null
                                           ? Theme.of(context).textTheme.titleMedium?.copyWith(color: titleColor)
                                           : Theme.of(context).textTheme.titleMedium,
@@ -400,14 +401,15 @@ class _OrderScreenState extends State<OrderScreen> {
                                       return status != 'paid' && status != 'open';
                                     }).toList();
                                     
-                                    double totalUnpaid = 0.0;
+                                    int totalUnpaidCents = 0;
                                     for (final m in servedUnpaidItems) {
-                                      final qty = (m['qty'] as num?)?.toInt() ?? 1;
-                                      final price = (m['price'] as num?)?.toDouble() ?? 0.0;
-                                      totalUnpaid += qty * price;
+                                      totalUnpaidCents += Money.itemLineTotal(m);
                                     }
-                                    
-                                    final halfAmount = totalUnpaid / 2;
+
+                                    // Ganzzahlig halbieren: ein ungerader Cent
+                                    // faellt der ersten Haelfte zu, statt in
+                                    // Fliesskomma zu verschwinden.
+                                    final halfAmountCents = (totalUnpaidCents + 1) ~/ 2;
                                     
                                     if (!mounted) return;
                                     // this.context: der State-eigene Context gehoert zum
@@ -428,14 +430,14 @@ class _OrderScreenState extends State<OrderScreen> {
                                             ListTile(
                                               leading: const Icon(Icons.payments),
                                               title: const Text('Gesamtrechnung'),
-                                              subtitle: Text('€${totalUnpaid.toStringAsFixed(2)}'),
+                                              subtitle: Text(Money.format(totalUnpaidCents)),
                                               trailing: const Icon(Icons.arrow_forward),
                                               onTap: () => Navigator.of(ctx).pop('full'),
                                             ),
                                             ListTile(
                                               leading: const Icon(Icons.call_split),
                                               title: const Text('Rechnung halbieren (50/50)'),
-                                              subtitle: Text('€${halfAmount.toStringAsFixed(2)} pro Person'),
+                                              subtitle: Text('${Money.format(halfAmountCents)} pro Person'),
                                               trailing: const Icon(Icons.arrow_forward),
                                               onTap: () => Navigator.of(ctx).pop('half'),
                                             ),
@@ -475,23 +477,19 @@ class _OrderScreenState extends State<OrderScreen> {
                                         }
                                         return;
                                       }
-                                      final itemsWithTotal = served.map((m) {
-                                        final qty = (m['qty'] as num?)?.toInt() ?? 1;
-                                        final price = (m['price'] as num?)?.toDouble() ?? 0.0;
-                                        return {
-                                          ...m,
-                                          'lineTotal': qty * price,
-                                        };
+                                      final itemsWithTotal = served.map((m) => {
+                                        ...m,
+                                        'lineTotalCents': Money.itemLineTotal(m),
                                       }).toList()
-                                        ..sort((a, b) => (b['lineTotal'] as double).compareTo(a['lineTotal'] as double));
-                                      final total = itemsWithTotal.fold<double>(0.0, (p, m) => p + (m['lineTotal'] as double));
-                                      final target = total / 2.0;
-                                      double acc = 0.0;
+                                        ..sort((a, b) => (b['lineTotalCents'] as int).compareTo(a['lineTotalCents'] as int));
+                                      final totalCents = itemsWithTotal.fold<int>(0, (p, m) => p + (m['lineTotalCents'] as int));
+                                      final targetCents = totalCents ~/ 2;
+                                      int accCents = 0;
                                       final selectedIds = <String>[];
                                       for (final m in itemsWithTotal) {
-                                        if (acc >= target) break;
+                                        if (accCents >= targetCents) break;
                                         selectedIds.add(m['id'] as String);
-                                        acc += (m['lineTotal'] as double);
+                                        accCents += (m['lineTotalCents'] as int);
                                       }
                                       if (selectedIds.isEmpty) {
                                         selectedIds.add(itemsWithTotal.first['id'] as String);
@@ -511,14 +509,12 @@ class _OrderScreenState extends State<OrderScreen> {
                                       final raw = await ticketsRepo.getItemsRaw(_ticketId!);
                                       final selectable = raw.where((m) => (m['status'] ?? 'open') != 'paid').toList();
                                       final selected = <String>{};
-                                      double selTotal = 0.0;
-                                      double computeTotal() {
-                                        double t = 0.0;
+                                      int selTotalCents = 0;
+                                      int computeTotal() {
+                                        int t = 0;
                                         for (final m in selectable) {
                                           if (!selected.contains(m['id'] as String)) continue;
-                                          final qty = (m['qty'] as num?)?.toInt() ?? 1;
-                                          final price = (m['price'] as num?)?.toDouble() ?? 0.0;
-                                          t += qty * price;
+                                          t += Money.itemLineTotal(m);
                                         }
                                         return t;
                                       }
@@ -543,10 +539,9 @@ class _OrderScreenState extends State<OrderScreen> {
                                                               final id = (m['id'] as String);
                                                               final name = (m['name'] ?? m['menuItemId']).toString();
                                                               final qty = (m['qty'] as num?)?.toInt() ?? 1;
-                                                              final price = (m['price'] as num?)?.toDouble() ?? 0.0;
                                                               final notes = (m['notes'] ?? '').toString();
                                                               final st = (m['status'] ?? 'open').toString();
-                                                              final line = qty * price;
+                                                              final lineCents = Money.itemLineTotal(m);
                                                               return CheckboxListTile(
                                                                 value: selected.contains(id),
                                                                 onChanged: st == 'served'
@@ -557,11 +552,11 @@ class _OrderScreenState extends State<OrderScreen> {
                                                                           } else {
                                                                             selected.remove(id);
                                                                           }
-                                                                          selTotal = computeTotal();
+                                                                          selTotalCents = computeTotal();
                                                                         });
                                                                       }
                                                                     : null,
-                                                                title: Text('$name x$qty — €${line.toStringAsFixed(2)}'),
+                                                                title: Text('$name ×$qty — ${Money.format(lineCents)}'),
                                                                 subtitle: Text([
                                                                   if (notes.isNotEmpty) notes,
                                                                   if (st != 'served') 'Noch nicht serviert',
@@ -574,7 +569,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                                     const SizedBox(height: 8),
                                                     Align(
                                                       alignment: Alignment.centerRight,
-                                                      child: Text('Auswahl-Summe: €${selTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                      child: Text('Auswahl-Summe: ${Money.format(selTotalCents)}', style: const TextStyle(fontWeight: FontWeight.bold)),
                                                     ),
                                                   ],
                                                 ),

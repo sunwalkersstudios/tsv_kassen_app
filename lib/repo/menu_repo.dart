@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/entities.dart';
+import '../util/money.dart';
 
 class MenuRepo {
   final _db = FirebaseFirestore.instance;
@@ -16,7 +17,7 @@ class MenuRepo {
           return MenuItemEntity(
             id: d.id,
             name: m['name'] as String,
-            price: (m['price'] as num).toDouble(),
+            priceCents: Money.readCents(m, 'priceCents', 'price'),
             category: m['category'] as String,
             route: m['route'] as String,
             eventId: ev == 'base' ? null : ev,
@@ -35,7 +36,7 @@ class MenuRepo {
           return MenuItemEntity(
             id: d.id,
             name: m['name'] as String,
-            price: (m['price'] as num).toDouble(),
+            priceCents: Money.readCents(m, 'priceCents', 'price'),
             category: m['category'] as String,
             route: m['route'] as String,
             eventId: ev == 'base' ? null : ev,
@@ -45,14 +46,14 @@ class MenuRepo {
 
   Future<void> addItem({
     required String name,
-    required double price,
+    required int priceCents,
     required String category,
     required String route,
     String? eventId,
   }) async {
     await _db.collection('menu').add({
       'name': name,
-      'price': price,
+      'priceCents': priceCents,
       'category': category,
       'route': route,
       'eventId': eventId ?? 'base',
@@ -63,7 +64,7 @@ class MenuRepo {
   Future<void> updateItem(MenuItemEntity e) async {
     await _db.collection('menu').doc(e.id).set({
       'name': e.name,
-      'price': e.price,
+      'priceCents': e.priceCents,
       'category': e.category,
       'route': e.route,
       // Persist sentinel 'base' for null (base) to keep queries working

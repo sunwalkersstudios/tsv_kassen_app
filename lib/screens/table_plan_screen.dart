@@ -7,6 +7,7 @@ import '../state/auth_provider.dart';
 import '../state/settings_provider.dart';
 import '../repo/tickets_repo.dart';
 import '../widgets/user_menu_button.dart';
+import '../util/money.dart';
 
 class TablePlanScreen extends StatelessWidget {
   const TablePlanScreen({super.key});
@@ -24,10 +25,10 @@ class TablePlanScreen extends StatelessWidget {
       ),
       body: auth.user == null
           ? const Center(child: Text('Bitte anmelden'))
-          : StreamBuilder<Map<String, double>>(
+          : StreamBuilder<Map<String, int>>(
               stream: ticketsRepo.streamOpenAmountsByTable(),
               builder: (context, openAmountsSnap) {
-                final openAmounts = openAmountsSnap.data ?? const <String, double>{};
+                final openAmounts = openAmountsSnap.data ?? const <String, int>{};
                 return StreamBuilder<Map<String, Map<String, bool>>>(
               stream: ticketsRepo.streamRouteFlagsAll(),
               builder: (context, snap) {
@@ -79,7 +80,7 @@ class TablePlanScreen extends StatelessWidget {
                     final barReady = f['bar'] == true;
                     final List<Map<String, dynamic>> readyKitchen = (readyByTable[t.id]?['kitchen'] ?? const []);
                     final List<Map<String, dynamic>> readyBar = (readyByTable[t.id]?['bar'] ?? const []);
-                    final openAmount = openAmounts[t.id] ?? 0.0;
+                    final openAmount = openAmounts[t.id] ?? 0;
                     return Material(
                       elevation: 3,
                       borderRadius: BorderRadius.circular(16),
@@ -119,7 +120,7 @@ class TablePlanScreen extends StatelessWidget {
                                       Padding(
                                         padding: const EdgeInsets.only(top: 4),
                                         child: Text(
-                                          '€${openAmount.toStringAsFixed(2)}',
+                                          Money.format(openAmount),
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,

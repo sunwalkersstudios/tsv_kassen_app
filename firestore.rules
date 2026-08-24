@@ -127,8 +127,8 @@ service cloud.firestore {
 
       allow create: if isSignedIn() && (isServer() || isAdmin())
         && request.resource.data.paymentMethod in ['cash', 'card']
-        && request.resource.data.total is number
-        && request.resource.data.total >= 0
+        && request.resource.data.totalCents is int
+        && request.resource.data.totalCents >= 0
         && request.resource.data.day is string
         && request.resource.data.serverId is string;
 

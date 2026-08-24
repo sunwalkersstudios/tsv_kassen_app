@@ -51,13 +51,30 @@
   bereits geloeschten Onboarding und enthielten einen weiteren Pfad, der Konten
   anlegte.
 
-### Geld
+### Geld: durchgaengig ganzzahlige Cent
 
-- Neue Betraege werden als ganzzahlige Cent gefuehrt (`Money`, `CashDay`),
-  nicht als Fliesskommazahl. Die Verkaufsdokumente bleiben vorerst `double`;
-  umgerechnet wird beim Einlesen.
+- **Alle Betraege laufen als `int` in Cent.** Fliesskomma war die falsche
+  Grundlage: 0,10 + 0,20 ergibt dort nicht exakt 0,30, und der Fehler waechst
+  mit jeder Summierung ueber die Positionen eines Belegs.
+- Umgestellt: Menuepreise (`priceCents`), Ticketpositionen, Belegsummen
+  (`totalCents`, `lineTotalCents`), offene Betraege je Tisch, Kassenwerte.
+- **Ein zentraler Leser** in `Money` kennt beide Feldnamen und faellt auf das
+  alte Fliesskommafeld zurueck. So bleiben nicht migrierte Dokumente lesbar,
+  statt stillschweigend 0,00 EUR zu ergeben - und die Rueckfalllogik liegt an
+  einer Stelle statt verstreut.
+- Die 43 vorhandenen Menuepreise wurden migriert; `price` bleibt vorerst als
+  Ruecksprungmoeglichkeit stehen.
 - `Money.parse` deutet einen Punkt mit genau drei Ziffern dahinter als
   Tausendertrenner ("1.000" -> 1000,00), sonst als Dezimaltrenner.
+- Betraege erscheinen jetzt durchgaengig mit deutschem Dezimalkomma, auch auf
+  gedruckten Belegen.
+
+### Behoben
+
+- **Der gedruckte Tagesabschluss zeigte 0,00 EUR bei Kassenstart, Einlagen und
+  Entnahmen.** `printDaySummary` las diese Werte noch aus SharedPreferences,
+  waehrend sie seit der Kassenueberarbeitung in Firestore liegen - die App
+  zeigte also andere Zahlen als der Bon.
 
 ### Sonstiges
 

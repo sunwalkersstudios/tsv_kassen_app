@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'settings_repo.dart';
 
 import '../models/entities.dart';
+import '../util/money.dart';
 
 class TicketsRepo {
   final _db = FirebaseFirestore.instance;
@@ -114,7 +115,7 @@ class TicketsRepo {
     required int qty,
     required String route,
     String? name,
-    double? price,
+    int? priceCents,
     String? category,
     String notes = '',
   }) async {
@@ -154,7 +155,7 @@ class TicketsRepo {
       'route': route,
       'notes': notes,
       if (name != null) 'name': name,
-      if (price != null) 'price': price,
+      if (priceCents != null) 'priceCents': priceCents,
       if (category != null) 'category': category,
       'status': 'open',
       'tableId': tableId, // denormalize for collectionGroup queries
@@ -372,7 +373,9 @@ class TicketsRepo {
 
     // Load items to compute totals and capture sale lines (only items that are served and not already paid)
     final itemsSnap = await ticketRef.collection('items').get();
-    double total = 0;
+    // Ganzzahlig summieren: bei Fliesskomma sammeln sich die Fehler ueber die
+    // Positionen eines Belegs auf.
+    int totalCents = 0;
     final saleItems = <Map<String, dynamic>>[];
     final toMarkPaid = <DocumentReference>[];
     for (final d in itemsSnap.docs) {
@@ -381,17 +384,17 @@ class TicketsRepo {
       if (st == 'paid') continue;
       if (st != 'served') continue; // enforce served before payment
       final qty = (m['qty'] as num?)?.toInt() ?? 1;
-      final price = (m['price'] as num?)?.toDouble() ?? 0.0;
-      final lineTotal = price * qty;
-      total += lineTotal;
+      final priceCents = Money.itemPrice(m);
+      final lineCents = priceCents * qty;
+      totalCents += lineCents;
       saleItems.add({
         'menuItemId': (m['menuItemId'] ?? '').toString(),
         'name': (m['name'] ?? '').toString(),
         'category': (m['category'] ?? '').toString(),
         'route': (m['route'] ?? '').toString(),
         'qty': qty,
-        'price': price,
-        'lineTotal': lineTotal,
+        'priceCents': priceCents,
+        'lineTotalCents': lineCents,
       });
       toMarkPaid.add(d.reference);
     }
@@ -412,7 +415,7 @@ class TicketsRepo {
       'serverId': serverId,
       'paidAt': FieldValue.serverTimestamp(),
       'day': day,
-      'total': total,
+      'totalCents': totalCents,
       'paymentMethod': paymentMethod,
       'items': saleItems,
     });
@@ -445,7 +448,9 @@ class TicketsRepo {
     final tableName = (tData['tableName'] as String?) ?? '';
     final serverId = (tData['serverId'] as String?) ?? '';
 
-    double total = 0;
+    // Ganzzahlig summieren: bei Fliesskomma sammeln sich die Fehler ueber die
+    // Positionen eines Belegs auf.
+    int totalCents = 0;
     final saleItems = <Map<String, dynamic>>[];
     final toMarkPaid = <DocumentReference>[];
     for (final itemId in itemIds) {
@@ -460,17 +465,17 @@ class TicketsRepo {
         throw Exception('Nicht servierter Artikel in Auswahl: ${(m['name'] ?? m['menuItemId']).toString()}');
       }
       final qty = (m['qty'] as num?)?.toInt() ?? 1;
-      final price = (m['price'] as num?)?.toDouble() ?? 0.0;
-      final lineTotal = price * qty;
-      total += lineTotal;
+      final priceCents = Money.itemPrice(m);
+      final lineCents = priceCents * qty;
+      totalCents += lineCents;
       saleItems.add({
         'menuItemId': (m['menuItemId'] ?? '').toString(),
         'name': (m['name'] ?? '').toString(),
         'category': (m['category'] ?? '').toString(),
         'route': (m['route'] ?? '').toString(),
         'qty': qty,
-        'price': price,
-        'lineTotal': lineTotal,
+        'priceCents': priceCents,
+        'lineTotalCents': lineCents,
       });
       toMarkPaid.add(ref);
     }
@@ -488,7 +493,7 @@ class TicketsRepo {
       'serverId': serverId,
       'paidAt': FieldValue.serverTimestamp(),
       'day': day,
-      'total': total,
+      'totalCents': totalCents,
       'paymentMethod': paymentMethod,
       'items': saleItems,
     });
@@ -710,9 +715,9 @@ class TicketsRepo {
 
   /// Stream der offenen Beträge (unbezahlt) pro Tisch
   /// Liefert `Map<tableId, openAmount>`
-  Stream<Map<String, double>> streamOpenAmountsByTable() {
+  Stream<Map<String, int>> streamOpenAmountsByTable() {
     return _db.collection('tickets').snapshots().asyncMap((ticketsSnap) async {
-      final amountsByTable = <String, double>{};
+      final amountsByTable = <String, int>{};
       
       for (final ticketDoc in ticketsSnap.docs) {
         final ticketData = ticketDoc.data();
@@ -725,7 +730,7 @@ class TicketsRepo {
         
         // Lade alle Items für dieses Ticket (nur servierte, unbezahlte)
         final itemsSnap = await ticketDoc.reference.collection('items').get();
-        double tableTotal = 0.0;
+        int tableTotalCents = 0;
         
         for (final itemDoc in itemsSnap.docs) {
           final itemData = itemDoc.data();
@@ -734,12 +739,11 @@ class TicketsRepo {
           if (status == 'paid' || status == 'open') continue;
           
           final qty = (itemData['qty'] as num?)?.toInt() ?? 1;
-          final price = (itemData['price'] as num?)?.toDouble() ?? 0.0;
-          tableTotal += qty * price;
+          tableTotalCents += Money.itemPrice(itemData) * qty;
         }
         
-        if (tableTotal > 0) {
-          amountsByTable[tableId] = (amountsByTable[tableId] ?? 0.0) + tableTotal;
+        if (tableTotalCents > 0) {
+          amountsByTable[tableId] = (amountsByTable[tableId] ?? 0) + tableTotalCents;
         }
       }
       

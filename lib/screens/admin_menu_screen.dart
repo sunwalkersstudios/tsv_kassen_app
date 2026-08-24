@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../state/events_provider.dart';
 import '../repo/menu_repo.dart';
 import '../models/entities.dart';
+import '../util/money.dart';
 
 class AdminMenuScreen extends StatefulWidget {
   const AdminMenuScreen({super.key});
@@ -50,8 +51,8 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
             icon: const Icon(Icons.download_for_offline),
             onPressed: () async {
               try {
-                await repo.addItem(name: 'Cola', price: 2.8, category: 'Getränke', route: 'bar', eventId: null);
-                await repo.addItem(name: 'Schnitzel', price: 12.5, category: 'Speisen', route: 'kitchen', eventId: null);
+                await repo.addItem(name: 'Cola', priceCents: 280, category: 'Getränke', route: 'bar', eventId: null);
+                await repo.addItem(name: 'Schnitzel', priceCents: 1250, category: 'Speisen', route: 'kitchen', eventId: null);
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demo-Artikel hinzugefügt')));
               } catch (e) {
@@ -165,8 +166,7 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
     if (!context.mounted) return;
     if (ok == true) {
       final nm = name.text.trim();
-      final prStr = price.text.replaceAll(RegExp(r'[^0-9,\\.-]'), '').replaceAll(',', '.').trim();
-      final pr = double.tryParse(prStr);
+      final pr = Money.parse(price.text);
       if (nm.isEmpty || pr == null || pr <= 0) {
         if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bitte Namen und gültigen Preis (> 0) angeben')));
@@ -181,7 +181,7 @@ class _AdminMenuScreenState extends State<AdminMenuScreen> {
       try {
         await repo.addItem(
           name: nm,
-          price: pr,
+          priceCents: pr,
           category: category,
           route: route,
           eventId: eventSpecific ? selectedEventId : null,
@@ -215,7 +215,7 @@ class _MenuList extends StatelessWidget {
             final m = items[index];
             return ListTile(
               title: Text(m.name),
-              subtitle: Text('${m.category} • ${m.route} • ${m.price.toStringAsFixed(2)} €'),
+              subtitle: Text('${m.category} • ${m.route} • ${Money.format(m.priceCents)}'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -224,7 +224,7 @@ class _MenuList extends StatelessWidget {
                     tooltip: 'Bearbeiten',
                     onPressed: () async {
                       final nameCtrl = TextEditingController(text: m.name);
-                      final priceCtrl = TextEditingController(text: m.price.toStringAsFixed(2));
+                      final priceCtrl = TextEditingController(text: Money.plain(m.priceCents));
                       String category = m.category;
                       String route = m.route;
                       final ok = await showDialog<bool>(
@@ -276,8 +276,7 @@ class _MenuList extends StatelessWidget {
                       );
                       if (ok == true) {
                         final nm = nameCtrl.text.trim();
-                        final prStr = priceCtrl.text.replaceAll(RegExp(r'[^0-9,\.-]'), '').replaceAll(',', '.').trim();
-                        final pr = double.tryParse(prStr);
+                        final pr = Money.parse(priceCtrl.text);
                         if (nm.isEmpty || pr == null || pr <= 0) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bitte gültige Werte eingeben')));
@@ -287,7 +286,7 @@ class _MenuList extends StatelessWidget {
                           await MenuRepo().updateItem(MenuItemEntity(
                             id: m.id,
                             name: nm,
-                            price: pr,
+                            priceCents: pr,
                             category: category,
                             route: route,
                             eventId: m.eventId,

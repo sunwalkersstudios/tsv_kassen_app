@@ -61,7 +61,7 @@ class SalesSummary {
     final dayMap = <String, DayLine>{};
 
     for (final sale in sales) {
-      final cents = Money.fromDouble(sale['total'] as num?);
+      final cents = Money.saleTotal(sale);
       final isCard = (sale['paymentMethod'] ?? 'cash').toString() == 'card';
       final day = (sale['day'] ?? '').toString();
 
@@ -86,9 +86,7 @@ class SalesSummary {
         final it = Map<String, dynamic>.from(raw as Map);
         final name = (it['name'] ?? it['menuItemId'] ?? '(ohne Namen)').toString();
         final qty = (it['qty'] as num?)?.toInt() ?? 1;
-        final lineCents = it['lineTotal'] != null
-            ? Money.fromDouble(it['lineTotal'] as num?)
-            : Money.fromDouble((it['price'] as num?)) * qty;
+        final lineCents = Money.itemLineTotal(it);
         final line = itemMap.putIfAbsent(
           name,
           () => ItemLine(

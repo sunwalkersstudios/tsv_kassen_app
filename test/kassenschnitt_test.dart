@@ -274,4 +274,53 @@ void main() {
       expect(await AppLock.verify('2468'), isFalse);
     });
   });
+
+  group('Money.readCents — Umstellung auf Cent', () {
+    test('bevorzugt das Cent-Feld', () {
+      expect(Money.saleTotal({'totalCents': 1250, 'total': 99.99}), 1250);
+      expect(Money.itemPrice({'priceCents': 350, 'price': 9.99}), 350);
+    });
+
+    test('faellt auf das alte Fliesskommafeld zurueck', () {
+      expect(Money.saleTotal({'total': 12.50}), 1250);
+      expect(Money.itemPrice({'price': 3.50}), 350);
+    });
+
+    test('ergibt null, wenn beides fehlt — nicht Absturz', () {
+      expect(Money.saleTotal({}), 0);
+      expect(Money.saleTotal(null), 0);
+      expect(Money.itemPrice({'name': 'Bier'}), 0);
+    });
+
+    test('Zeilensumme: Cent, Altfeld, sonst Preis mal Menge', () {
+      expect(Money.itemLineTotal({'lineTotalCents': 700}), 700);
+      expect(Money.itemLineTotal({'lineTotal': 7.00}), 700);
+      expect(Money.itemLineTotal({'priceCents': 350, 'qty': 2}), 700);
+      expect(Money.itemLineTotal({'price': 3.50, 'qty': 2}), 700);
+      // ohne Menge gilt eins
+      expect(Money.itemLineTotal({'priceCents': 350}), 350);
+    });
+
+    test('Auswertung liest gemischte Alt- und Neubestaende korrekt', () {
+      final s = SalesSummary.fromSales([
+        {'day': '2025-11-12', 'totalCents': 1250, 'paymentMethod': 'cash',
+         'items': [{'name': 'Schnitzel', 'qty': 1, 'lineTotalCents': 1250}]},
+        {'day': '2025-11-12', 'total': 3.50, 'paymentMethod': 'cash',
+         'items': [{'name': 'Bier', 'qty': 1, 'lineTotal': 3.50}]},
+      ]);
+      expect(s.cashCents, 1600);
+      expect(s.items.firstWhere((i) => i.name == 'Bier').totalCents, 350);
+    });
+
+    test('ganzzahlig summieren vermeidet den Fliesskommafehler', () {
+      // 0,10 + 0,20 ergibt in Fliesskomma nicht exakt 0,30
+      final s = SalesSummary.fromSales([
+        {'day': 'x', 'totalCents': 10, 'paymentMethod': 'cash', 'items': const []},
+        {'day': 'x', 'totalCents': 20, 'paymentMethod': 'cash', 'items': const []},
+      ]);
+      expect(s.cashCents, 30);
+      // dieselbe Rechnung ueber Fliesskomma waere 0.30000000000000004
+      expect(0.1 + 0.2 == 0.3, isFalse);
+    });
+  });
 }
