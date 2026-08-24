@@ -87,3 +87,6 @@ firestore-debug.log
 firebase-debug.log
 .env
 secrets/
+
+# Entwurfsbilder werden per --update-goldens erzeugt
+test/design/bilder/
