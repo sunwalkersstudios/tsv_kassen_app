@@ -95,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = e.message);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Anmeldung fehlgeschlagen. Ist das WLAN verbunden?');
+      setState(() => _error = _fehlertext(e));
       debugPrint('[LoginScreen] Personalanmeldung fehlgeschlagen: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -172,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = e.message);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Anmeldung fehlgeschlagen. Bitte erneut versuchen.');
+      setState(() => _error = _fehlertext(e));
       debugPrint('[LoginScreen] Unerwarteter Anmeldefehler: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -191,6 +191,28 @@ class _LoginScreenState extends State<LoginScreen> {
         await sp.setStringList(key, list);
       }
     } catch (_) {}
+  }
+
+  /// Unterscheidet fehlende Verbindung von anderen Fehlern.
+  ///
+  /// Eine Anmeldung braucht immer Netz - Firebase muss serverseitig pruefen,
+  /// wer da kommt. Das gilt mit Passwort wie mit Namenskachel. Wer bereits
+  /// angemeldet ist, arbeitet dagegen ohne Verbindung weiter; das ist der
+  /// Unterschied, den die Meldung benennen sollte.
+  String _fehlertext(Object e) {
+    final text = e.toString().toLowerCase();
+    final ohneNetz = text.contains('network') ||
+        text.contains('unavailable') ||
+        text.contains('failed host lookup') ||
+        text.contains('socketexception') ||
+        text.contains('deadline');
+    if (ohneNetz) {
+      return 'Ohne Verbindung ist keine Anmeldung möglich. '
+          'Bitte WLAN oder Flugmodus prüfen.\n'
+          'Wer bereits angemeldet ist, kann ohne Verbindung weiterarbeiten – '
+          'Bestellungen werden gespeichert und später nachgereicht.';
+    }
+    return 'Anmeldung fehlgeschlagen. Bitte erneut versuchen.';
   }
 
   String _homeForRole(UserRole role) {
