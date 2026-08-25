@@ -164,6 +164,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---------------------------------------------------------------- Geraete
+
+    // Freigeschaltete Geraete fuer die passwortlose Personalanmeldung.
+    //
+    // Kein Schreibzugriff von der App: angelegt und widerrufen wird
+    // ausschliesslich ueber die Cloud Functions, die am Admin-SDK vorbei an
+    // diesen Regeln vorbeischreiben. Lesen darf nur der Admin - das
+    // Geraetegeheimnis liegt zwar nur als Pruefsumme hier, aber die Liste der
+    // Geraete geht sonst niemanden etwas an.
+    match /devices/{deviceId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ------------------------------------------------------------ Kassentage
 
     // Kassenstart, Einlagen, Entnahmen. Nur Admin, weil die Kasse insgesamt

@@ -218,3 +218,8 @@ exports.scheduledFirestoreExport = functions
 // adminSetPassword, adminDisableUser) - siehe admin_users.js
 // ---------------------------------------------------------------------------
 Object.assign(exports, require('./admin_users'));
+
+// ---------------------------------------------------------------------------
+// Geraetefreischaltung und passwortlose Personalanmeldung - siehe devices.js
+// ---------------------------------------------------------------------------
+Object.assign(exports, require('./devices'));

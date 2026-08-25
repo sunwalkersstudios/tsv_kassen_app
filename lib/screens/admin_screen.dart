@@ -290,6 +290,13 @@ class AdminScreen extends StatelessWidget {
           ),
           const Divider(),
           ListTile(
+            title: const Text('Geräte'),
+            subtitle: const Text('Anmeldung ohne Passwort freischalten oder widerrufen'),
+            trailing: const Icon(Icons.tablet_android),
+            onTap: () => context.push('/admin/devices'),
+          ),
+          const Divider(),
+          ListTile(
             title: const Text('Kasse / Tagesübersicht'),
             subtitle: const Text('Tagesumsatz, Barbestand, Artikelübersicht'),
             trailing: const Icon(Icons.point_of_sale),

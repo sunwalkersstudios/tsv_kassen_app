@@ -75,6 +75,22 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Meldet ein Personalkonto ohne Passwort an - moeglich nur auf einem
+  /// freigeschalteten Geraet.
+  ///
+  /// Der Token stammt aus der Cloud Function `staffSignIn`, die ihn nur fuer
+  /// Nicht-Adminkonten und nur gegen ein gueltiges Geraetegeheimnis ausstellt.
+  Future<void> loginWithToken(String customToken) async {
+    try {
+      final cred = await _auth!.signInWithCustomToken(customToken);
+      await _loadProfile(cred.user!);
+    } on FirebaseAuthException catch (e) {
+      throw AuthFailure(_messageFor(e), code: e.code);
+    }
+    _listenForTokenRefresh();
+    notifyListeners();
+  }
+
   /// Uebersetzt die Firebase-Fehlercodes in verstaendliches Deutsch.
   /// Bei falschen Zugangsdaten bewusst ohne Hinweis darauf, ob die Adresse
   /// existiert - sonst liesse sich damit herausfinden, wer ein Konto hat.
@@ -92,6 +108,10 @@ class AuthProvider extends ChangeNotifier {
         return 'Zu viele Versuche. Bitte einen Moment warten und erneut probieren.';
       case 'network-request-failed':
         return 'Keine Verbindung. Bitte WLAN prüfen.';
+      case 'invalid-custom-token':
+      case 'custom-token-mismatch':
+        return 'Die Anmeldung dieses Geräts ist nicht mehr gültig. '
+            'Bitte einen Admin bitten, das Gerät neu freizuschalten.';
       case 'operation-not-allowed':
         return 'Anmeldung per E-Mail ist im Firebase-Projekt nicht aktiviert.';
       default:

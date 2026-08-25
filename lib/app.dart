@@ -10,6 +10,7 @@ import 'screens/kitchen_screen.dart';
 import 'screens/bar_screen.dart';
 import 'screens/cashier_screen.dart';
 import 'screens/admin_screen.dart';
+import 'screens/admin_devices_screen.dart';
 import 'screens/admin_events_screen.dart';
 import 'screens/admin_menu_screen.dart';
 import 'screens/admin_tables_screen.dart';
@@ -133,6 +134,10 @@ class TsvApp extends StatelessWidget {
         GoRoute(
           path: '/admin/menu',
           builder: (context, state) => const AdminMenuScreen(),
+        ),
+        GoRoute(
+          path: '/admin/devices',
+          builder: (context, state) => const AdminDevicesScreen(),
         ),
         GoRoute(
           path: '/admin/settings',

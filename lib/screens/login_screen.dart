@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/entities.dart';
+import '../repo/device_repo.dart';
 import '../state/auth_provider.dart';
 import '../state/device_context.dart';
 
@@ -20,15 +21,73 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passCtrl = TextEditingController();
   final _passFocus = FocusNode();
 
+  final _deviceRepo = DeviceRepo();
+
   bool _loading = false;
   bool _showPassword = false;
   String? _error;
   List<String> _knownEmails = [];
 
+  /// Konten, die sich hier ohne Passwort anmelden duerfen. Leer, solange das
+  /// Geraet nicht freigeschaltet ist.
+  List<StaffAccount> _personal = const [];
+  bool _personalGeladen = false;
+
+  /// Wenn true, wird die Passwortmaske gezeigt statt der Namensliste.
+  /// Der Weg fuer Admins, die es hier immer brauchen.
+  bool _passwortModus = false;
+
   @override
   void initState() {
     super.initState();
     _restoreLastLogin();
+    _ladePersonal();
+  }
+
+  Future<void> _ladePersonal() async {
+    if (!await _deviceRepo.isRegistered()) {
+      if (mounted) setState(() => _personalGeladen = true);
+      return;
+    }
+    final liste = await _deviceRepo.staffList();
+    if (!mounted) return;
+    setState(() {
+      _personal = liste;
+      _personalGeladen = true;
+    });
+  }
+
+  /// Anmeldung per Namenskachel.
+  Future<void> _anmeldenAls(StaffAccount konto) async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final auth = context.read<AuthProvider>();
+    final fcm = context.read<FirebaseMessaging>();
+    final router = GoRouter.of(context);
+
+    try {
+      final token = await _deviceRepo.signInToken(konto.uid);
+      await auth.loginWithToken(token);
+      try {
+        final t = await fcm.getToken();
+        if (t != null) await auth.saveFcmToken(t);
+      } catch (_) {}
+      if (!mounted) return;
+      router.go(_homeForRole(auth.user?.role ?? UserRole.server));
+    } on AuthFailure catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Anmeldung fehlgeschlagen. Ist das WLAN verbunden?');
+      debugPrint('[LoginScreen] Personalanmeldung fehlgeschlagen: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -161,55 +220,80 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                   const SizedBox(height: 28),
 
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    enabled: !_loading,
-                    decoration: const InputDecoration(
-                      labelText: 'E-Mail',
-                      prefixIcon: Icon(Icons.person_outline),
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => _passFocus.requestFocus(),
-                  ),
-                  const SizedBox(height: 12),
-
-                  TextField(
-                    controller: _passCtrl,
-                    focusNode: _passFocus,
-                    obscureText: !_showPassword,
-                    textInputAction: TextInputAction.done,
-                    enabled: !_loading,
-                    decoration: InputDecoration(
-                      labelText: 'Passwort',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(_showPassword ? Icons.visibility_off : Icons.visibility),
-                        tooltip: _showPassword ? 'Passwort verbergen' : 'Passwort anzeigen',
-                        onPressed: () => setState(() => _showPassword = !_showPassword),
+                  // Auf einem freigeschalteten Geraet genuegt ein Tippen auf
+                  // den Namen. Admins brauchen weiterhin ihr Passwort und
+                  // erreichen die Maske ueber "Als Admin anmelden".
+                  if (!_personalGeladen)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 32),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_personal.isNotEmpty && !_passwortModus) ...[
+                    for (final konto in _personal) ...[
+                      _PersonalKachel(
+                        konto: konto,
+                        enabled: !_loading,
+                        onTap: () => _anmeldenAls(konto),
                       ),
+                      const SizedBox(height: 10),
+                    ],
+                    const SizedBox(height: 6),
+                    TextButton.icon(
+                      onPressed: _loading
+                          ? null
+                          : () => setState(() {
+                                _passwortModus = true;
+                                _error = null;
+                              }),
+                      icon: const Icon(Icons.admin_panel_settings, size: 20),
+                      label: const Text('Als Admin anmelden'),
                     ),
-                    onSubmitted: (_) => _submit(),
-                  ),
-
-                  if (_knownEmails.isNotEmpty) ...[
+                  ] else ...[
+                    TextField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      autocorrect: false,
+                      enabled: !_loading,
+                      decoration: const InputDecoration(
+                        labelText: 'E-Mail',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      onSubmitted: (_) => _passFocus.requestFocus(),
+                    ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        for (final email in _knownEmails)
-                          ActionChip(
-                            label: Text(email),
-                            onPressed: _loading
-                                ? null
-                                : () => setState(() => _emailCtrl.text = email),
-                          ),
-                      ],
+                    TextField(
+                      controller: _passCtrl,
+                      focusNode: _passFocus,
+                      obscureText: !_showPassword,
+                      textInputAction: TextInputAction.done,
+                      enabled: !_loading,
+                      decoration: InputDecoration(
+                        labelText: 'Passwort',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(_showPassword ? Icons.visibility_off : Icons.visibility),
+                          tooltip: _showPassword ? 'Passwort verbergen' : 'Passwort anzeigen',
+                          onPressed: () => setState(() => _showPassword = !_showPassword),
+                        ),
+                      ),
+                      onSubmitted: (_) => _submit(),
                     ),
+                    if (_knownEmails.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          for (final email in _knownEmails)
+                            ActionChip(
+                              label: Text(email),
+                              onPressed:
+                                  _loading ? null : () => setState(() => _emailCtrl.text = email),
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
 
                   if (_error != null) ...[
@@ -218,7 +302,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: theme.colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
@@ -235,28 +319,104 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
 
                   const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: _loading ? null : _submit,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                  if (_personal.isEmpty || _passwortModus)
+                    FilledButton(
+                      onPressed: _loading ? null : _submit,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Anmelden'),
                     ),
-                    child: _loading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Anmelden'),
-                  ),
                   const SizedBox(height: 12),
-                  Text(
-                    'Kein Konto? Die Zugänge legt der Admin unter Admin → Benutzer an.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  if (_personal.isNotEmpty && _passwortModus)
+                    TextButton(
+                      onPressed: _loading
+                          ? null
+                          : () => setState(() {
+                                _passwortModus = false;
+                                _error = null;
+                              }),
+                      child: const Text('Zurück zur Namensauswahl'),
+                    )
+                  else if (_personal.isEmpty)
+                    Text(
+                      'Kein Konto? Die Zugänge legt der Admin unter Admin → Benutzer an.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall,
+                    ),
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Eine Namenskachel auf dem Anmeldebildschirm.
+class _PersonalKachel extends StatelessWidget {
+  final StaffAccount konto;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _PersonalKachel({required this.konto, required this.enabled, required this.onTap});
+
+  static IconData _symbol(String role) => switch (role) {
+        'kitchen' => Icons.restaurant,
+        'bar' => Icons.local_bar,
+        _ => Icons.room_service,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+    return Material(
+      color: cs.surfaceContainer,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(_symbol(konto.role), size: 22, color: cs.onPrimaryContainer),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(konto.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.textTheme.titleMedium),
+                    Text(konto.roleLabel, style: t.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward, color: cs.onSurfaceVariant),
+            ],
           ),
         ),
       ),
