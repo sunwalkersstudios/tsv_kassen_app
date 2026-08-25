@@ -176,7 +176,14 @@ class _CashierScreenState extends State<CashierScreen> {
   ) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      if (kind == 'csv') {
+      if (kind == 'pdf-druck') {
+        await ReportExport.printPdf(
+          period: _period,
+          summary: summary,
+          cashDays: cashDays,
+          drawerCents: drawerCents,
+        );
+      } else if (kind == 'csv') {
         await ReportExport.shareCsv(
           period: _period,
           summary: summary,
@@ -668,7 +675,14 @@ class CashierBody extends StatelessWidget {
         spacing: 8,
         runSpacing: 8,
         children: [
+          // Drucken zuerst: das ist der uebliche Fall. Der Dialog von Android
+          // fuehrt zu jedem bekannten Drucker, auch "Als PDF speichern".
           FilledButton.icon(
+            onPressed: () => onExport?.call('pdf-druck'),
+            icon: const Icon(Icons.print),
+            label: const Text('Drucken'),
+          ),
+          OutlinedButton.icon(
             onPressed: () => onExport?.call('pdf'),
             icon: const Icon(Icons.picture_as_pdf),
             label: const Text('PDF teilen'),
@@ -681,8 +695,11 @@ class CashierBody extends StatelessWidget {
           if (period.isSingleDay) ...[
             OutlinedButton.icon(
               onPressed: onPrintDay,
-              icon: const Icon(Icons.print),
-              label: const Text('Tagesabschluss drucken'),
+              icon: const Icon(Icons.receipt_long),
+              // Ausdruecklich benannt: frueher hiess das schlicht
+              // "Tagesabschluss drucken" und landete unerwartet auf dem
+              // Bondrucker, obwohl daneben nur "PDF teilen" stand.
+              label: const Text('Bon-Ausdruck (Thermodrucker)'),
             ),
             TextButton.icon(
               onPressed: () => onResetDay?.call(period.fromKey),

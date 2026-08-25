@@ -260,6 +260,34 @@ class ReportExport {
     return doc.save();
   }
 
+  /// Erzeugt das PDF und uebergibt es dem Druckdialog des Geraets.
+  ///
+  /// Anders als [sharePdf] landet das PDF damit direkt im Drucksystem von
+  /// Android: dort steht jeder Drucker zur Auswahl, den das Geraet kennt -
+  /// der Drucker im WLAN ebenso wie "Als PDF speichern". Das ist der Weg fuer
+  /// den Kassenschnitt auf einem gewoehnlichen Drucker; der Bondrucker laeuft
+  /// weiterhin ueber ReceiptService und ESC/POS.
+  static Future<void> printPdf({
+    required ReportPeriod period,
+    required SalesSummary summary,
+    required Map<String, CashDay> cashDays,
+    required int drawerCents,
+    String orgName = 'TSV KassenApp',
+  }) async {
+    final bytes = await buildPdf(
+      period: period,
+      summary: summary,
+      cashDays: cashDays,
+      drawerCents: drawerCents,
+      orgName: orgName,
+    );
+    await Printing.layoutPdf(
+      onLayout: (_) async => bytes,
+      name: 'Kassenschnitt-${period.fileLabel}',
+      format: PdfPageFormat.a4,
+    );
+  }
+
   /// Erzeugt das PDF und oeffnet den Teilen-Dialog.
   static Future<void> sharePdf({
     required ReportPeriod period,
