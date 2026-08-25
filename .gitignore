@@ -90,3 +90,4 @@ secrets/
 
 # Entwurfsbilder werden per --update-goldens erzeugt
 test/design/bilder/
+test/design/failures/
