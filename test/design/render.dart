@@ -7,9 +7,13 @@
 // Schema, kein nachgebautes Mockup.
 //
 // Aufruf:
-//   flutter test test/design/render_test.dart --update-goldens
+//   flutter test test/design/render.dart --update-goldens
 //
-// Ohne --update-goldens vergleicht der Lauf nur gegen die vorhandenen Bilder.
+// Die Datei heisst bewusst nicht *_test.dart und wird deshalb vom normalen
+// "flutter test" nicht mit aufgesammelt: Sie erzeugt Bilder, sie prueft nichts.
+// Liefe sie mit, waere die Testsuite nach jeder gewollten Gestaltungsaenderung
+// rot - und auf einem frischen Klon ohnehin, weil die Bilder nicht versioniert
+// sind.
 
 import 'dart:io';
 

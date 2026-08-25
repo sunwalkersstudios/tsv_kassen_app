@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -12,6 +13,7 @@ import 'package:firebase_performance/firebase_performance.dart';
 
 import 'app.dart';
 import 'state/auth_provider.dart';
+import 'state/connection_status.dart';
 import 'state/tables_provider.dart';
 import 'state/events_provider.dart';
 import 'state/settings_provider.dart';
@@ -56,6 +58,18 @@ Future<void> main() async {
     // Initialize Firebase (Android resolves options from google-services.json)
     try {
       await Firebase.initializeApp();
+    } catch (_) {}
+
+    // Offline-Betrieb ausdruecklich einschalten statt sich auf die Vorgabe zu
+    // verlassen. Im Vereinsheim faellt das WLAN aus; Firestore liest dann aus
+    // dem Zwischenspeicher weiter und reicht Schreibvorgaenge nach, sobald es
+    // wieder geht. Ohne Groessengrenze, damit an einem langen Abend nichts aus
+    // dem Zwischenspeicher faellt.
+    try {
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      );
     } catch (_) {}
 
     // Enable Crashlytics & Performance collection in foreground (no-ops on web)
@@ -132,6 +146,7 @@ Future<void> main() async {
       MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => ConnectionStatus()),
           ChangeNotifierProvider(create: (_) => SettingsProvider()),
           ChangeNotifierProvider(create: (_) => EventsProvider()..start()),
           ChangeNotifierProvider(create: (_) => TablesProvider()),

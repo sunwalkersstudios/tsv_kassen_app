@@ -486,11 +486,17 @@ class CashierBody extends StatelessWidget {
               ),
             ],
           );
+          // Karte nur zeigen, wenn im Zeitraum tatsaechlich etwas darauf lief.
+          // Im Vereinsheim wird ausschliesslich bar kassiert; eine Spalte, die
+          // immer null zeigt, ist kein Hinweis, sondern Rauschen.
+          final zeigeKarte = s.cardCents != 0;
           final rest = [
             klein('Bar', Money.format(s.cashCents)),
             const SizedBox(width: 26),
-            klein('Karte', Money.format(s.cardCents)),
-            const SizedBox(width: 26),
+            if (zeigeKarte) ...[
+              klein('Karte', Money.format(s.cardCents)),
+              const SizedBox(width: 26),
+            ],
             klein('Belege', '${s.receipts}'),
           ];
 
@@ -503,7 +509,7 @@ class CashierBody extends StatelessWidget {
                 const SizedBox(height: 14),
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                   klein('Bar', Money.format(s.cashCents)),
-                  klein('Karte', Money.format(s.cardCents)),
+                  if (zeigeKarte) klein('Karte', Money.format(s.cardCents)),
                   klein('Belege', '${s.receipts}'),
                 ]),
               ],

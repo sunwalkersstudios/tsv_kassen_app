@@ -220,6 +220,21 @@ class _MenuList extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
+                    icon: Icon(m.favorite ? Icons.star : Icons.star_border),
+                    color: m.favorite ? Theme.of(context).colorScheme.primary : null,
+                    tooltip: m.favorite
+                        ? 'Nicht mehr anpinnen'
+                        : 'Anpinnen – erscheint in der Bestellmaske vorn',
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        await MenuRepo().setFavorite(m.id, !m.favorite);
+                      } catch (e) {
+                        messenger.showSnackBar(SnackBar(content: Text('Fehler: $e')));
+                      }
+                    },
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.edit),
                     tooltip: 'Bearbeiten',
                     onPressed: () async {

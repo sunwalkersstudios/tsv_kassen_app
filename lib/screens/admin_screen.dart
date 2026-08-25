@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../util/bluetooth_printer_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../widgets/user_menu_button.dart';
+import '../widgets/connection_indicator.dart';
 
 class AdminScreen extends StatelessWidget {
   const AdminScreen({super.key});
@@ -12,7 +13,7 @@ class AdminScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin'),
-        actions: const [UserMenuButton()],
+        actions: const [ConnectionIndicator(), UserMenuButton()],
       ),
       body: ListView(
         children: [

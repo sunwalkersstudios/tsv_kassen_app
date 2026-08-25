@@ -28,6 +28,12 @@ class MenuItemEntity {
   String category; // Speisen / Getraenke / ...
   String route; // kitchen/bar
   String? eventId; // null => Basiskarte, sonst veranstaltungsbezogen
+
+  /// Angepinnt: erscheint in der Bestellmaske ganz vorn unter "Favoriten".
+  /// Gedacht fuer die Handvoll Artikel, die den Grossteil ausmachen - im alten
+  /// Datenbestand waren Schnitzel und Bier zusammen 111 von 493 Positionen.
+  bool favorite;
+
   MenuItemEntity({
     required this.id,
     required this.name,
@@ -35,6 +41,7 @@ class MenuItemEntity {
     required this.category,
     required this.route,
     this.eventId,
+    this.favorite = false,
   });
 }
 

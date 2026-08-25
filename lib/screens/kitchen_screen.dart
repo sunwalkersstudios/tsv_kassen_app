@@ -6,6 +6,7 @@ import '../repo/tickets_repo.dart';
 import '../state/tables_provider.dart';
 import '../widgets/pending_orders_view.dart';
 import '../widgets/user_menu_button.dart';
+import '../widgets/connection_indicator.dart';
 
 /// Kuechenansicht: offene Positionen der Route 'kitchen' als Bon-Karten.
 ///
@@ -22,7 +23,7 @@ class KitchenScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Küche'),
-        actions: const [UserMenuButton()],
+        actions: const [ConnectionIndicator(), UserMenuButton()],
       ),
       body: StreamBuilder<Map<String, dynamic>>(
         stream: SettingsRepo().streamOrgSettings(),

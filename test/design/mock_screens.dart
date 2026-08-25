@@ -75,12 +75,12 @@ class MockOrder extends StatelessWidget {
   const MockOrder({super.key});
 
   static final _karte = [
-    MenuItemEntity(id: 'm1', name: 'Schnitzel', priceCents: 1250, category: 'Speisen', route: 'kitchen'),
+    MenuItemEntity(id: 'm1', name: 'Schnitzel', priceCents: 1250, category: 'Speisen', route: 'kitchen', favorite: true),
     MenuItemEntity(id: 'm2', name: 'Currywurst Pommes', priceCents: 850, category: 'Speisen', route: 'kitchen'),
     MenuItemEntity(id: 'm3', name: 'Grünkohl', priceCents: 1550, category: 'Speisen', route: 'kitchen'),
     MenuItemEntity(id: 'm4', name: 'Port. Pommes', priceCents: 350, category: 'Speisen', route: 'kitchen'),
-    MenuItemEntity(id: 'm5', name: 'Bier/Radler 0,4', priceCents: 350, category: 'Getränke', route: 'bar'),
-    MenuItemEntity(id: 'm6', name: 'Cola, Fanta 0,5', priceCents: 350, category: 'Getränke', route: 'bar'),
+    MenuItemEntity(id: 'm5', name: 'Bier/Radler 0,4', priceCents: 350, category: 'Getränke', route: 'bar', favorite: true),
+    MenuItemEntity(id: 'm6', name: 'Cola, Fanta 0,5', priceCents: 350, category: 'Getränke', route: 'bar', favorite: true),
     MenuItemEntity(id: 'm7', name: 'A-Schorle', priceCents: 350, category: 'Getränke', route: 'bar'),
     MenuItemEntity(id: 'm8', name: 'Kaffee / Tee', priceCents: 200, category: 'Getränke', route: 'bar'),
     MenuItemEntity(id: 'm9', name: 'Wein 0,2', priceCents: 350, category: 'Getränke', route: 'bar'),

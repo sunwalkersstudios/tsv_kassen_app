@@ -5,6 +5,7 @@ import '../repo/tickets_repo.dart';
 import '../state/tables_provider.dart';
 import '../widgets/pending_orders_view.dart';
 import '../widgets/user_menu_button.dart';
+import '../widgets/connection_indicator.dart';
 
 /// Baransicht: offene Positionen der Route 'bar' als Bon-Karten.
 ///
@@ -25,7 +26,7 @@ class BarScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Bar'),
-        actions: const [UserMenuButton()],
+        actions: const [ConnectionIndicator(), UserMenuButton()],
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: ticketsRepo.streamPendingForRoute('bar'),

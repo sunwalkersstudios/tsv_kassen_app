@@ -21,6 +21,7 @@ class MenuRepo {
             category: m['category'] as String,
             route: m['route'] as String,
             eventId: ev == 'base' ? null : ev,
+            favorite: m['favorite'] == true,
           );
         }).toList());
   }
@@ -40,6 +41,7 @@ class MenuRepo {
             category: m['category'] as String,
             route: m['route'] as String,
             eventId: ev == 'base' ? null : ev,
+            favorite: m['favorite'] == true,
           );
         }).toList());
   }
@@ -67,6 +69,7 @@ class MenuRepo {
       'priceCents': e.priceCents,
       'category': e.category,
       'route': e.route,
+      'favorite': e.favorite,
       // Persist sentinel 'base' for null (base) to keep queries working
       'eventId': e.eventId ?? 'base',
     }, SetOptions(merge: true));
@@ -90,6 +93,11 @@ class MenuRepo {
       await batch.commit();
     }
     return updated;
+  }
+
+  /// Pinnt einen Artikel an oder loest ihn wieder.
+  Future<void> setFavorite(String id, bool favorite) async {
+    await _db.collection('menu').doc(id).set({'favorite': favorite}, SetOptions(merge: true));
   }
 
   Future<void> deleteItem(String id) async {

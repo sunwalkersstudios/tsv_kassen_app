@@ -9,6 +9,7 @@ import '../state/settings_provider.dart';
 import '../state/tables_provider.dart';
 import '../util/money.dart';
 import '../widgets/user_menu_button.dart';
+import '../widgets/connection_indicator.dart';
 
 /// Tischplan als Kachelraster.
 ///
@@ -33,7 +34,7 @@ class TablePlanScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tischplan'),
-        actions: const [UserMenuButton()],
+        actions: const [ConnectionIndicator(), UserMenuButton()],
       ),
       body: auth.user == null
           ? const _Hinweis('Bitte anmelden.')
