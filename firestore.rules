@@ -88,6 +88,18 @@ service cloud.firestore {
         && request.resource.data.serverId == resource.data.serverId
         && request.resource.data.status in ['open', 'sentToKitchen', 'ready', 'served', 'paid'];
 
+      // Kueche und Bar melden "fertig". Dabei schreibt die App nicht nur die
+      // Position, sondern auch routesReady und status auf dem Ticket - ohne
+      // diese Regel scheitert das Abhaken, nachdem die Position bereits
+      // umgestellt wurde, und der Bon bleibt in einem halben Zustand haengen.
+      //
+      // Bewusst eng gefasst: ausschliesslich diese drei Felder, der Kellner
+      // bleibt unangetastet, und bezahlt wird hierueber nicht.
+      allow update: if isSignedIn() && (isKitchen() || isBar())
+        && resource.data.status != 'paid'
+        && onlyChanges(['routesReady', 'updatedAt', 'status'])
+        && request.resource.data.status in ['open', 'sentToKitchen', 'ready', 'served'];
+
       allow delete: if isAdmin();
 
       match /items/{itemId} {
@@ -100,20 +112,35 @@ service cloud.firestore {
           && (isServer() || isAdmin())
           && get(/databases/$(database)/documents/tickets/$(ticketId)).data.status != 'paid';
 
-        // Kueche und Bar duerfen ausschliesslich Positionen ihrer eigenen
-        // Route auf 'ready' setzen.
-        allow update: if isSignedIn() && isKitchen()
-          && request.resource.data.route == 'kitchen'
-          && resource.data.route == 'kitchen'
+        // Kueche und Bar duerfen Positionen auf 'ready' setzen - und sonst
+        // nichts. Weder Preis noch Menge noch Route sind veraenderbar.
+        //
+        // Ohne Einschraenkung auf die eigene Route: sind Kueche und Bar
+        // zusammengelegt (orgs.mergeKitchenBar), zeigt die Kuechenansicht
+        // beide Routen, und die Trennung waere nur noch durchsetzbar, indem
+        // jede Regelauswertung die Organisationseinstellung nachliest. Der
+        // Preis dafuer waere ein zusaetzlicher Dokumentlesevorgang bei jedem
+        // Abhaken, und verhindert wuerde damit eine Verwechslung im Betrieb,
+        // kein Missbrauch: mehr als "fertig" kann hier niemand setzen.
+        allow update: if isSignedIn() && (isKitchen() || isBar())
           && request.resource.data.status == 'ready'
-          && resource.data.status in ['open', 'sentToKitchen'];
-
-        allow update: if isSignedIn() && isBar()
-          && request.resource.data.route == 'bar'
-          && resource.data.route == 'bar'
-          && request.resource.data.status == 'ready'
-          && resource.data.status in ['open', 'sentToKitchen'];
+          && resource.data.status in ['open', 'sentToKitchen']
+          && onlyChanges(['status', 'updatedAt', 'readyAt']);
       }
+    }
+
+    // Sammelgruppen-Abfragen auf "items"
+    //
+    // Kueche, Bar und Tischplan fragen ueber collectionGroup('items') ab. Auf
+    // solche Abfragen trifft die verschachtelte Regel unter tickets/{id}/items
+    // NICHT zu - Firestore verlangt dafuer eine eigene Regel auf Gruppenebene.
+    // Fehlt sie, liefert die Kuechenansicht permission-denied, obwohl der
+    // Zugriff auf dieselben Dokumente ueber den vollen Pfad erlaubt ist.
+    //
+    // Nur Lesen. Geschrieben wird weiterhin ausschliesslich ueber den vollen
+    // Pfad und damit unter den Regeln oben.
+    match /{path=**}/items/{itemId} {
+      allow read: if isSignedIn();
     }
 
     // -------------------------------------------------------------- Verkaeufe
