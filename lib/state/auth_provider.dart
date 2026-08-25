@@ -61,7 +61,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> login({required String email, required String password}) async {
     try {
       final cred = await _auth!.signInWithEmailAndPassword(email: email, password: password);
-      await _loadProfile(cred.user!);
+      await _loadProfile(cred.user!, tokenIstFrisch: true);
     } on FirebaseAuthException catch (e) {
       throw AuthFailure(_messageFor(e), code: e.code);
     }
@@ -83,7 +83,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> loginWithToken(String customToken) async {
     try {
       final cred = await _auth!.signInWithCustomToken(customToken);
-      await _loadProfile(cred.user!);
+      await _loadProfile(cred.user!, tokenIstFrisch: true);
     } on FirebaseAuthException catch (e) {
       throw AuthFailure(_messageFor(e), code: e.code);
     }
@@ -156,48 +156,60 @@ class AuthProvider extends ChangeNotifier {
 
   // ------------------------------------------------------------------ Profil
 
-  Future<void> _loadProfile(User firebaseUser) async {
-    final role = await _roleFromClaims(firebaseUser);
+  /// Laedt Rolle, Anzeigename und Organisation.
+  ///
+  /// [tokenIstFrisch] gilt direkt nach einer Anmeldung: der Token kommt dann
+  /// gerade vom Server und traegt die Rolle bereits. Ihn trotzdem zu
+  /// erneuern waere ein zusaetzlicher Netzweg vor dem ersten Bildschirm.
+  Future<void> _loadProfile(User firebaseUser, {bool tokenIstFrisch = false}) async {
+    // Die drei Abfragen haengen nicht voneinander ab und laufen deshalb
+    // nebeneinander statt hintereinander. Vorher waren es drei Netzwege in
+    // Folge, was sich beim Anmelden deutlich bemerkbar machte.
+    final rolleF = _roleFromClaims(firebaseUser, erneuern: !tokenIstFrisch);
+    final docF = _db!
+        .collection('users')
+        .doc(firebaseUser.uid)
+        .get()
+        .then<Map<String, dynamic>?>((d) => d.data())
+        .catchError((_) => null);
+    final mergedF = SettingsRepo().getMergeKitchenBar().catchError((_) => false);
 
-    // Anzeigename und Organisation kommen weiter aus Firestore - das sind
-    // reine Anzeigedaten ohne Rechtewirkung.
+    final role = await rolleF;
+    final data = await docF;
+    final merged = await mergedF;
+
+    // Anzeigename und Organisation sind reine Anzeigedaten ohne Rechtewirkung.
     String displayName =
         firebaseUser.displayName ?? firebaseUser.email?.split('@').first ?? firebaseUser.uid;
     String? orgId;
-    try {
-      final doc = await _db!.collection('users').doc(firebaseUser.uid).get();
-      final data = doc.data();
-      if (data != null) {
-        final n = (data['displayName'] as String?)?.trim();
-        if (n != null && n.isNotEmpty) displayName = n;
-        orgId = (data['orgId'] as String?)?.trim();
-      }
-    } catch (_) {/* Anzeigename ist entbehrlich */}
+    if (data != null) {
+      final n = (data['displayName'] as String?)?.trim();
+      if (n != null && n.isNotEmpty) displayName = n;
+      orgId = (data['orgId'] as String?)?.trim();
+    }
 
-    var effective = role;
     // Sind Kueche und Bar zusammengelegt, wird die Bar-Rolle fuer die
     // Navigation wie Kueche behandelt. Die echte Rolle bleibt unberuehrt.
-    try {
-      if (role == UserRole.bar && await SettingsRepo().getMergeKitchenBar()) {
-        effective = UserRole.kitchen;
-      }
-    } catch (_) {}
+    final effective = (role == UserRole.bar && merged) ? UserRole.kitchen : role;
 
     _user = UserProfile(uid: firebaseUser.uid, displayName: displayName, role: effective);
 
+    // Ohne Warten: der Organisationsname wird erst auf spaeteren Bildschirmen
+    // gebraucht und soll den ersten Bildschirm nicht aufhalten.
     if (orgId != null && orgId.isNotEmpty) {
-      await _applyOrgContext(orgId);
+      unawaited(_applyOrgContext(orgId).catchError((_) {}));
     }
   }
 
   /// Liest die Rolle aus dem Auth-Token.
   ///
-  /// `getIdTokenResult(true)` erzwingt eine Aktualisierung, damit eine gerade
-  /// vom Admin geaenderte Rolle sofort greift und nicht bis zu einer Stunde
-  /// im alten Token haengt.
-  Future<UserRole> _roleFromClaims(User firebaseUser) async {
+  /// [erneuern] erzwingt eine Aktualisierung, damit eine gerade vom Admin
+  /// geaenderte Rolle sofort greift und nicht bis zu einer Stunde im alten
+  /// Token haengt. Direkt nach einer Anmeldung ist das unnoetig - der Token
+  /// ist dann keine Sekunde alt.
+  Future<UserRole> _roleFromClaims(User firebaseUser, {bool erneuern = true}) async {
     try {
-      final token = await firebaseUser.getIdTokenResult(true);
+      final token = await firebaseUser.getIdTokenResult(erneuern);
       final claim = token.claims?['role'];
       if (claim is String && claim.isNotEmpty) return _roleFromString(claim);
     } catch (e) {

@@ -719,38 +719,35 @@ class TicketsRepo {
 
   /// Stream der offenen Beträge (unbezahlt) pro Tisch
   /// Liefert `Map<tableId, openAmount>`
+  /// Offene Betraege je Tisch, in Cent.
+  ///
+  /// Frueher lauschte diese Methode auf die Ticket-Sammlung und lud bei jeder
+  /// Aenderung fuer jedes Ticket dessen Positionen einzeln nach - nacheinander.
+  /// Bei acht offenen Tischen waren das acht Netzwege statt einem, und zwar
+  /// jedes Mal von vorn, sobald sich irgendwo etwas ruehrte.
+  ///
+  /// Jetzt genuegt eine einzige Sammelgruppen-Abfrage: die Positionen tragen
+  /// ihre tableId bereits mit sich.
+  ///
+  /// Beruecksichtigt werden servierte, noch nicht bezahlte Positionen. Ein
+  /// bezahltes Ticket faellt dabei von selbst heraus, weil seine Positionen
+  /// beim Kassieren auf 'paid' gesetzt werden.
   Stream<Map<String, int>> streamOpenAmountsByTable() {
-    return _db.collection('tickets').snapshots().asyncMap((ticketsSnap) async {
+    return _db.collectionGroup('items').snapshots().map((snap) {
       final amountsByTable = <String, int>{};
-      
-      for (final ticketDoc in ticketsSnap.docs) {
-        final ticketData = ticketDoc.data();
-        final tableId = (ticketData['tableId'] as String?) ?? '';
+      for (final d in snap.docs) {
+        final m = d.data();
+        final tableId = (m['tableId'] as String?) ?? '';
         if (tableId.isEmpty) continue;
-        
-        // Ignoriere komplett bezahlte Tickets
-        final ticketStatus = (ticketData['status'] as String?) ?? 'open';
-        if (ticketStatus == 'paid') continue;
-        
-        // Lade alle Items für dieses Ticket (nur servierte, unbezahlte)
-        final itemsSnap = await ticketDoc.reference.collection('items').get();
-        int tableTotalCents = 0;
-        
-        for (final itemDoc in itemsSnap.docs) {
-          final itemData = itemDoc.data();
-          final status = (itemData['status'] as String?) ?? 'open';
-          // Nur servierte Items (routed/ready/billable), keine offenen oder bezahlten
-          if (status == 'paid' || status == 'open') continue;
-          
-          final qty = (itemData['qty'] as num?)?.toInt() ?? 1;
-          tableTotalCents += Money.itemPrice(itemData) * qty;
-        }
-        
-        if (tableTotalCents > 0) {
-          amountsByTable[tableId] = (amountsByTable[tableId] ?? 0) + tableTotalCents;
-        }
+
+        final status = (m['status'] as String?) ?? 'open';
+        if (status == 'paid' || status == 'open') continue;
+
+        final qty = (m['qty'] as num?)?.toInt() ?? 1;
+        amountsByTable[tableId] =
+            (amountsByTable[tableId] ?? 0) + Money.itemPrice(m) * qty;
       }
-      
+      amountsByTable.removeWhere((_, v) => v <= 0);
       return amountsByTable;
     });
   }

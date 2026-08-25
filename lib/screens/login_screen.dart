@@ -49,10 +49,22 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() => _personalGeladen = true);
       return;
     }
+
+    // Zuerst die zuletzt bekannte Liste zeigen - sie steht sofort zur
+    // Verfuegung und aendert sich selten. Ohne das wartet der Bildschirm bei
+    // jedem Oeffnen auf einen Netzweg, bevor ueberhaupt etwas erscheint.
+    final gemerkt = await _deviceRepo.cachedStaff();
+    if (mounted && gemerkt.isNotEmpty) {
+      setState(() {
+        _personal = gemerkt;
+        _personalGeladen = true;
+      });
+    }
+
     final liste = await _deviceRepo.staffList();
     if (!mounted) return;
     setState(() {
-      _personal = liste;
+      _personal = liste.isNotEmpty ? liste : _personal;
       _personalGeladen = true;
     });
   }

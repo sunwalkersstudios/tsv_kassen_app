@@ -152,6 +152,9 @@ class DeviceRepo {
     } catch (_) {}
   }
 
+  /// Zuletzt bekannte Liste, ohne Netzweg.
+  Future<List<StaffAccount>> cachedStaff() => _cachedStaff();
+
   Future<List<StaffAccount>> _cachedStaff() async {
     try {
       final sp = await SharedPreferences.getInstance();
